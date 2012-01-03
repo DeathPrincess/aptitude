@@ -1187,6 +1187,22 @@ i A texlive-latex-extra Conflicts textopo</screen>
 	</listitem>
       </varlistentry>
 
+      <varlistentry>
+        <term><literal>-c</literal> <replaceable>file</replaceable>, <literal>--config-file</literal> <replaceable>file</replaceable></term>
+
+        <listitem>
+          <para>
+            Specify a configuration file to use.  &aptitude; will read
+            options from this file after the default system and user
+            configuration files.  For more information on
+            configuration file options see the section <quote><link
+            linkend='secConfigFile'>Configuration file
+            reference</link></quote> in the &aptitude; reference
+            manual.
+          </para>
+        </listitem>
+      </varlistentry>
+
       <varlistentry id='cmdlineOptionDisableColumns'>
 	<term><literal>--disable-columns</literal></term>
 
@@ -1604,11 +1620,17 @@ libdbix-fulltextsearch-perl 0.73-10</screen>
           <para>
             The default sort order is <literal>name,version</literal>.
           </para>
+
+	  <para>
+	    This corresponds to the configuration option
+	    <literal><link
+	    linkend='configCmdLine-Search-Sorting'>Aptitude::CmdLine::Search-Sorting</link></literal>.
+	  </para>
 	</listitem>
       </varlistentry>
 
       <varlistentry>
-	<term><literal>-o</literal> <replaceable>key</replaceable><literal>=</literal><replaceable>value</replaceable></term>
+	<term><literal>-o</literal> <replaceable>key</replaceable><literal>=</literal><replaceable>value</replaceable>, <literal>--option</literal> <replaceable>key</replaceable><literal>=</literal><replaceable>value</replaceable></term>
 
 	<listitem>
 	  <para>
@@ -2257,7 +2279,7 @@ The following packages will be REMOVED:
 	    <menuchoice><guimenu>Actions</guimenu><guimenuitem>Clean
 	    obsolete files</guimenuitem></menuchoice>).  You cannot
 	    use this option and
-	    <quote><literal>--autoclean-on-startup</literal></quote>,
+	    <quote><literal>--clean-on-startup</literal></quote>,
 	    <quote><literal>-i</literal></quote>, or
 	    <quote><literal>-u</literal></quote> at the same time.
 	  </para>

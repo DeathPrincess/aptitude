@@ -10863,6 +10863,22 @@ e: Examine  !: Apply  .: Next  ,: Previous</screen>
 	      </seg>
 	    </seglistitem>
 
+            <seglistitem id='configCmdLine-Search-Sorting'>
+              <seg><literal>Aptitude::CmdLine::Search-Sorting</literal></seg>
+              <seg><literal>name,version</literal></seg>
+              <seg>
+                This is the order in which output from the <link
+                linkend='cmdlineSearch'><literal>search</literal></link> and <link
+                linkend='cmdlineVersions'><literal>versions</literal></link>
+                commands will be displayed.  See the section <quote><link
+                linkend='secSortingPolicy'>Customizing how packages are
+                sorted</link></quote> in the &aptitude; reference manual for more
+                information.  This is equivalent to the <link
+                linkend='cmdlineOptionSort'><literal>--sort</literal>
+                command-line option</link>.
+              </seg>
+            </seglistitem>
+
 	    <seglistitem id='configCmdLine-Show-Deps'>
 	      <seg><literal>Aptitude::CmdLine::Show-Deps</literal></seg>
 	      <seg><literal>false</literal></seg>

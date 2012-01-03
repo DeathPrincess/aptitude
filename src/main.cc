@@ -19,11 +19,6 @@
 //
 //  Tests the various screen-output mechanisms
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE // For getopt.h
-#endif
-
-#include <getopt.h>
 #include <signal.h>
 
 #include "aptitude.h"
@@ -79,6 +74,7 @@
 #include <sigc++/functors/ptr_fun.h>
 
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/init.h>
 
 #include <boost/format.hpp>
@@ -247,6 +243,7 @@ static void usage()
   printf(_(" -t [release]   Set the release from which packages should be installed.\n"));
   printf(_(" -q             In command-line mode, suppress the incremental progress.\n"
            "                indicators.\n"));
+  printf(_(" -c file        Read this configuration file.\n"));
   printf(_(" -o key=val     Directly set the configuration option named 'key'.\n"));
   printf(_(" --with(out)-recommends	Specify whether or not to treat recommends as.\n"
            "                strong dependencies.\n"));
@@ -259,100 +256,63 @@ static void usage()
   printf(_("                  This aptitude does not have Super Cow Powers.\n"));
 }
 
-// This handles options with no single-character equivalent
-enum {
-  OPTION_VERSION = 1,
-  OPTION_VISUAL_PREVIEW,
-  OPTION_QUEUE_ONLY,
-  OPTION_PURGE_UNUSED,
-  OPTION_ALLOW_UNTRUSTED,
-  OPTION_NO_NEW_INSTALLS,
-  OPTION_NO_NEW_UPGRADES,
-  OPTION_ALLOW_NEW_INSTALLS,
-  OPTION_ALLOW_NEW_UPGRADES,
-  OPTION_ADD_USER_TAG,
-  OPTION_ADD_USER_TAG_TO,
-  OPTION_REMOVE_USER_TAG,
-  OPTION_REMOVE_USER_TAG_FROM,
-  OPTION_SAFE_RESOLVER,
-  OPTION_FULL_RESOLVER,
-  OPTION_SHOW_RESOLVER_ACTIONS,
-  OPTION_NO_SHOW_RESOLVER_ACTIONS,
-  OPTION_ARCH_ONLY,
-  OPTION_NOT_ARCH_ONLY,
-  OPTION_DISABLE_COLUMNS,
-  OPTION_GUI,
-  OPTION_NO_GUI,
-  OPTION_QT_GUI,
-  OPTION_NO_QT_GUI,
-  OPTION_LOG_LEVEL,
-  OPTION_LOG_FILE,
-  OPTION_LOG_CONFIG_FILE,
-  OPTION_LOG_RESOLVER,
-  OPTION_SHOW_SUMMARY,
-  OPTION_AUTOCLEAN_ON_STARTUP,
-  OPTION_CLEAN_ON_STARTUP,
-  OPTION_GROUP_BY,
-  OPTION_SHOW_PACKAGE_NAMES,
-  OPTION_NEW_GUI,
-};
-int getopt_result;
-
-option opts[]={
-  {"help", 0, NULL, 'h'},
-  {"version", 0, &getopt_result, OPTION_VERSION},
-  {"display-format", 1, NULL, 'F'},
-  {"quiet", 2, NULL, 'q'},
-  {"width", 1, NULL, 'w'},
-  {"simulate", 0, NULL, 's'},
-  {"allow-untrusted", 0, &getopt_result, OPTION_ALLOW_UNTRUSTED},
-  {"with-recommends", 0, NULL, 'r'},
-  {"without-recommends", 0, NULL, 'R'},
-  {"download-only", 0, NULL, 'd'},
-  {"assume-yes", 0, NULL, 'y'},
-  {"verbose", 0, NULL, 'v'},
-  {"show-versions", 0, NULL, 'V'},
-  {"show-deps", 0, NULL, 'D'},
-  {"show-why", 0, NULL, 'W'},
-  {"prompt", 0, NULL, 'P'},
-  {"sort", 1, NULL, 'O'},
-  {"target-release", 1, NULL, 't'},
-  {"disable-columns", 0, &getopt_result, OPTION_DISABLE_COLUMNS},
-  {"no-new-installs", 0, &getopt_result, OPTION_NO_NEW_INSTALLS},
-  {"no-new-upgrades", 0, &getopt_result, OPTION_NO_NEW_UPGRADES},
-  {"allow-new-installs", 0, &getopt_result, OPTION_ALLOW_NEW_INSTALLS},
-  {"allow-new-upgrades", 0, &getopt_result, OPTION_ALLOW_NEW_UPGRADES},
-  {"safe-resolver", 0, &getopt_result, OPTION_SAFE_RESOLVER},
-  {"full-resolver", 0, &getopt_result, OPTION_FULL_RESOLVER},
-  {"show-resolver-actions", 0, &getopt_result, OPTION_SHOW_RESOLVER_ACTIONS},
-  {"no-show-resolver-actions", 0, &getopt_result, OPTION_NO_SHOW_RESOLVER_ACTIONS},
-  {"visual-preview", 0, &getopt_result, OPTION_VISUAL_PREVIEW},
-  {"schedule-only", 0, &getopt_result, OPTION_QUEUE_ONLY},
-  {"purge-unused", 0, &getopt_result, OPTION_PURGE_UNUSED},
-  {"add-user-tag", 1, &getopt_result, OPTION_ADD_USER_TAG},
-  {"add-user-tag-to", 1, &getopt_result, OPTION_ADD_USER_TAG_TO},
-  {"remove-user-tag", 1, &getopt_result, OPTION_REMOVE_USER_TAG},
-  {"remove-user-tag-from", 1, &getopt_result, OPTION_REMOVE_USER_TAG_FROM},
-  {"arch-only", 0, &getopt_result, OPTION_ARCH_ONLY},
-  {"not-arch-only", 0, &getopt_result, OPTION_NOT_ARCH_ONLY},
+CommandLine::Args args[] = {
+  {'h', "help", "help", 0},
+  {0, "version", "version", 0},
+  {'q', "quiet", "quiet", CommandLine::IntLevel},
+  {'s', "simulate", PACKAGE "::Simulate", 0},
+  {'r', "with-recommends", "APT:Install-Recommends", 0},
+  {'R', "without-recommends", "without-recommends", 0},
+  {'t', "target-release", "APT::Default-Release", CommandLine::HasArg},
+  {'t', "default-release", "APT::Default-Release", CommandLine::HasArg},
+  {'S', "", "status-fname", CommandLine::HasArg},
+  {0, "purge-unused", PACKAGE "::Purge-Unused", 0},
+  {0, "log-level", PACKAGE "::Logging::Levels::", CommandLine::HasArg},
+  {0, "log-file", PACKAGE "::Logging::File", CommandLine::HasArg},
+  {0, "log-resolver", "log-resolver", 0},
+  {'F', "display-format", "display-format", CommandLine::HasArg},
+  {'w', "width", PACKAGE "::CmdLine::Package-Display-Width", CommandLine::HasArg},
+  {0, "allow-untrusted", PACKAGE "::CmdLine::Ignore-Trust-Violations", 0},
+  {'d', "download-only", PACKAGE "::CmdLine::Download-Only", 0},
+  {'y', "assume-yes", PACKAGE "::CmdLine::Assume-Yes", 0},
+  {'v', "verbose", PACKAGE "::CmdLine::Verbose", CommandLine::IntLevel},
+  {'V', "show-versions", PACKAGE "::CmdLine::Show-Versions", 0},
+  {'D', "show-deps", PACKAGE "::CmdLine::Show-Deps", 0},
+  {'W', "show-why", PACKAGE "::CmdLine::Show-Why", 0},
+  {'P', "prompt", PACKAGE "::CmdLine::Always-Prompt", 0},
+  {'O', "sort", PACKAGE "::CmdLine::Package-Sorting", CommandLine::HasArg},
+  {0, "disable-columns", PACKAGE "::CmdLine::Disable-Columns", 0},
+  {0, "no-new-installs", PACKAGE "::Safe-Resolver::No-New-Installs", 0},
+  {0, "no-new-upgrades", PACKAGE "::Safe-Resolver::No-New-Upgrades", 0},
+  {0, "allow-new-installs", PACKAGE "::Safe-Resolver::No-New-Installs", CommandLine::InvBoolean},
+  {0, "allow-new-upgrades", PACKAGE "::Safe-Resolver::No-New-Upgrades", CommandLine::InvBoolean},
+  {0, "safe-resolver", "use-full-resolver", CommandLine::InvBoolean},
+  {0, "full-resolver", "use-full-resolver", CommandLine::Boolean},
+  {0, "show-resolver-actions", PACKAGE "::Safe-Resolver::Show-Resolver-Actions", 0},
+  {0, "visual-preview", PACKAGE "::CmdLine::Visual-Preview", 0},
+  {0, "schedule-only", PACKAGE "::CmdLine::Schedule-Only", 0},
+  // TODO: add-user-tag, add-user-tag-to, remove-user-tag, remove-user-tag-from
+  {0, "arch-only", "APT::Get::Arch-Only", CommandLine::Boolean},
+  {0, "not-arch-only", "APT::Get::Arch-Only", CommandLine::InvBoolean},
+  {0, "show-summary", PACKAGE "::CmdLine::Show-Summary",  CommandLine::HasArg},
+  {0, "group-by", PACKAGE "::CmdLine::Versions-Group-By", CommandLine::HasArg},
+  {0, "show-package-names", PACKAGE "::CmdLine::Versions-Show-Package-Names", CommandLine::HasArg},
+  {'f', "fix-broken", PACKAGE "::CmdLine::Fix-Broken", 0},
+  {'Z', "show-size-changes", PACKAGE "::CmdLine::Show-Size-Changes", 0},
 #ifdef HAVE_GTK
-  {"gui", 0, &getopt_result, OPTION_GUI},
+  {0, "gui", PACKAGE "::Start-Gui", CommandLine::Boolean},
+  {0, "new-gui", "new-gui", 0},
 #endif
-  {"no-gui", 0, &getopt_result, OPTION_NO_GUI},
+  {0, "no-gui", PACKAGE "::Start-Gui", CommandLine::InvBoolean},
 #ifdef HAVE_QT
-  {"qt", 0, &getopt_result, OPTION_QT_GUI},
-  {"no-qt", 0, &getopt_result, OPTION_NO_QT_GUI},
+  {0, "qt", "use-qt-gui", 0},
 #endif
-  {"log-level", 1, &getopt_result, OPTION_LOG_LEVEL},
-  {"log-file", 1, &getopt_result, OPTION_LOG_FILE},
-  {"log-config-file", 1, &getopt_result, OPTION_LOG_CONFIG_FILE},
-  {"log-resolver", 0, &getopt_result, OPTION_LOG_RESOLVER},
-  {"show-summary", 2, &getopt_result, OPTION_SHOW_SUMMARY},
-  {"autoclean-on-startup", 0, &getopt_result, OPTION_AUTOCLEAN_ON_STARTUP},
-  {"clean-on-startup", 0, &getopt_result, OPTION_CLEAN_ON_STARTUP},
-  {"group-by", 1, &getopt_result, OPTION_GROUP_BY},
-  {"show-package-names", 1, &getopt_result, OPTION_SHOW_PACKAGE_NAMES},
-  {"new-gui", 0, &getopt_result, OPTION_NEW_GUI},
+  {0, "autoclean-on-startup", PACKAGE "::UI::Autoclean-On-Startup", 0},
+  {0, "clean-on-startup", PACKAGE "::UI::Clean-On-Startup", 0},
+  {'u', "update-on-startup", PACKAGE "::UI::Update-On-Startup", 0},
+  {'i', "install-on-startup", PACKAGE "::UI::Install-On-Startup", 0},
+  {'c', "config-file", 0, CommandLine::ConfigFile},
+  {'o', "option", 0, CommandLine::ArbItem},
   {0,0,0,0}
 };
 
@@ -589,7 +549,7 @@ void handle_message_logged(const char *sourceFilename,
     }
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
   // Block signals that we want to sigwait() on by default and put the
   // signal mask into a known state.  This ensures that unless threads
@@ -633,64 +593,6 @@ int main(int argc, char *argv[])
 
   close_cache_on_exit close_on_exit;
 
-  // The filename to read status information from.
-  char *status_fname=NULL;
-  string package_display_format = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Format", "%c%a%M %p# - %d#");
-  string version_display_format = aptcfg->Find(PACKAGE "::CmdLine::Version-Display-Format", "%c%a%M %p# %t %i");
-  string group_by_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Group-By", "auto");
-  string show_package_names_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Show-Package-Names", "auto");
-  string sort_policy="name,version";
-  string width=aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Width", "");
-  // Set to a non-empty string to enable logging simplistically; set
-  // to "-" to log to stdout.
-  string log_file = aptcfg->Find(PACKAGE "::Logging::File", "");
-  bool simulate = aptcfg->FindB(PACKAGE "::CmdLine::Simulate", false) ||
-    aptcfg->FindB(PACKAGE "::Simulate", false);
-  bool download_only=aptcfg->FindB(PACKAGE "::CmdLine::Download-Only", false);;
-  bool arch_only = aptcfg->FindB("Apt::Get::Arch-Only", false);
-
-  bool update_only=false, install_only=false, queue_only=false;
-  bool autoclean_only = false;
-  bool clean_only = false;
-  bool assume_yes=aptcfg->FindB(PACKAGE "::CmdLine::Assume-Yes", false);
-  bool fix_broken=aptcfg->FindB(PACKAGE "::CmdLine::Fix-Broken", false);
-  bool safe_resolver_no_new_installs = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Installs", false);
-  bool safe_resolver_no_new_upgrades = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Upgrades", false);
-  bool safe_resolver_show_resolver_actions = aptcfg->FindB(PACKAGE "::Safe-Resolver::Show-Resolver-Actions", false);
-
-  resolver_mode_tp resolver_mode = resolver_mode_default;
-  if(aptcfg->FindB(PACKAGE "::Always-Use-Safe-Resolver", false))
-    resolver_mode = resolver_mode_safe;
-
-  bool disable_columns = aptcfg->FindB(PACKAGE "::CmdLine::Disable-Columns", false);
-
-  bool showvers=aptcfg->FindB(PACKAGE "::CmdLine::Show-Versions", false);
-  bool showdeps=aptcfg->FindB(PACKAGE "::CmdLine::Show-Deps", false);
-  bool showsize=aptcfg->FindB(PACKAGE "::CmdLine::Show-Size-Changes", false);
-  bool showwhy = aptcfg->FindB(PACKAGE "::CmdLine::Show-Why", false);
-  string show_why_summary_mode = aptcfg->Find(PACKAGE "::CmdLine::Show-Summary", "no-summary");
-  bool visual_preview=aptcfg->FindB(PACKAGE "::CmdLine::Visual-Preview", false);
-  bool always_prompt=aptcfg->FindB(PACKAGE "::CmdLine::Always-Prompt", false);
-  int verbose=aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
-  bool seen_quiet = false;
-  int quiet = 0;
-  std::vector<aptitude::cmdline::tag_application> user_tags;
-
-#ifdef HAVE_GTK
-  // TODO: this should be a configuration option.
-  bool use_gtk_gui = aptcfg->FindB(PACKAGE "::Start-Gui", true);
-  // Use the in-progress new GUI harness instead of the old code.
-  bool use_new_gtk_gui = false;
-#endif
-
-#ifdef HAVE_QT
-  // Use Qt frontend.
-  bool use_qt_gui = false;
-#endif
-
-  int curopt;
-  // The last option seen
-
   // NOTE: this can of course be spoofed.  Anyone bothering to is off their
   //      rocker.
   argv0=argv[0];
@@ -709,284 +611,120 @@ int main(int argc, char *argv[])
   // By default don't log anything below WARN.
   Logger::getLogger("")->setLevel(WARN_LEVEL);
 
-  // Read the arguments:
-  while((curopt=getopt_long(argc, argv, "DVZWvhS:uiF:w:sO:fdyPt:q::Rro:", opts, NULL))!=-1)
+  // HACK: Support for optional values in CommandLine.
+  for(int i = 1; i != argc; i++)
     {
-      switch(curopt)
-	{
-	case 'S':
-	  status_fname=strdup(optarg);
-	  break;
-	case 'h':
-	  usage();
-	  exit(0);
-	case 'u':
-	  update_only=true;
-	  break;
-	case 'i':
-	  install_only=true;
-	  break;
-	case 'F':
-	  package_display_format=optarg;
-          version_display_format = optarg;
-	  break;
-	case 'w':
-	  width=optarg;
-	  break;
-	case 's':
-	  simulate=true;
-	  break;
-	case 'O':
-	  sort_policy=optarg;
-	  break;
-	case 'f':
-	  fix_broken=true;
-	  break;
-	case 'd':
-	  download_only=true;
-	  break;
-	case 'y':
-	  assume_yes=true;
-	  break;
-	case 'q':
-	  if(optarg == 0)
-	    ++quiet;
-	  else
-	    {
-	      if(*optarg == '=')
-		++optarg;
-
-	      if(*optarg == 0)
-		{
-		  fprintf(stderr, _("Expected a number after -q=\n"));
-		  return -1;
-		}
-
-	      char *tmp;
-	      quiet = strtol(optarg, &tmp, 0);
-
-	      if(*tmp != '\0')
-		{
-		  fprintf(stderr, _("Expected a number after -q=, got %s\n"),
-			  optarg);
-		  return -1;
-		}
-	    }
-	  seen_quiet = true;
-	  break;
-	case 'r':
-	  aptcfg->SetNoUser("Apt::Install-Recommends", "true");
-	  break;
-	case 'R':
-	  aptcfg->SetNoUser("Apt::Install-Recommends", "false");
-	  aptcfg->SetNoUser("Apt::AutoRemove::RecommendsImportant", "true");
-	  break;
-	case 't':
-	  aptcfg->SetNoUser("APT::Default-Release", optarg);
-	  break;
-	case 'o':
-	  {
-	    string s=optarg;
-	    string::size_type eqloc=s.find('=');
-
-	    // note that if eqloc!=s.npos, s.size()>0
-	    if(eqloc==s.npos || eqloc==s.size()-1)
-	      fprintf(stderr, _("-o requires an argument of the form key=value, got %s\n"), optarg);
-	    else
-	      {
-		string key(s, 0, eqloc), value(s, eqloc+1);
-
-		aptcfg->SetNoUser(key, value);
-	      }
-	  }
-	  break;
-	case 'v':
-	  ++verbose;
-	  break;
-	case 'V':
-	  showvers=true;
-	  break;
-	case 'D':
-	  showdeps=true;
-	  break;
-	case 'Z': // ew
-	  showsize=true;
-	  break;
-	case 'W':
-	  showwhy = true;
-	  break;
-	case 'P':
-	  always_prompt=true;
-	  break;
-	case ':':
-	case '?':
-	  usage();
-	  exit(1);
-	case 0:
-	  switch(getopt_result)
-	    {
-	    case OPTION_VERSION:
-	      show_version();
-	      exit(0);
-	    case OPTION_ALLOW_UNTRUSTED:
-	      aptcfg->Set(PACKAGE "::CmdLine::Ignore-Trust-Violations", true);
-	      break;
-	    case OPTION_SHOW_RESOLVER_ACTIONS:
-	      safe_resolver_show_resolver_actions = true;
-	      break;
-	    case OPTION_NO_SHOW_RESOLVER_ACTIONS:
-	      safe_resolver_show_resolver_actions = false;
-	      break;
-	    case OPTION_NO_NEW_INSTALLS:
-	      safe_resolver_no_new_installs = true;
-	      break;
-	    case OPTION_ALLOW_NEW_INSTALLS:
-	      safe_resolver_no_new_installs = false;
-	      break;
-	    case OPTION_NO_NEW_UPGRADES:
-	      safe_resolver_no_new_upgrades = true;
-	      break;
-	    case OPTION_ALLOW_NEW_UPGRADES:
-	      safe_resolver_no_new_upgrades = false;
-	      break;
-	    case OPTION_SAFE_RESOLVER:
-	      resolver_mode = resolver_mode_safe;
-	      break;
-	    case OPTION_FULL_RESOLVER:
-	      resolver_mode = resolver_mode_full;
-	      break;
-	    case OPTION_VISUAL_PREVIEW:
-	      visual_preview=true;
-	      break;
-	    case OPTION_QUEUE_ONLY:
-	      queue_only=true;
-	      break;
-	    case OPTION_PURGE_UNUSED:
-	      aptcfg->Set(PACKAGE "::Purge-Unused", "true");
-	      break;
-	    case OPTION_ADD_USER_TAG:
-	    case OPTION_REMOVE_USER_TAG:
-	      {
-		using aptitude::cmdline::tag_application;
-		const bool is_add = (getopt_result == OPTION_ADD_USER_TAG);
-		user_tags.push_back(tag_application(is_add, optarg, NULL));
-		break;
-	      }
-	    case OPTION_ADD_USER_TAG_TO:
-	    case OPTION_REMOVE_USER_TAG_FROM:
-	      {
-		using aptitude::cmdline::tag_application;
-		const bool is_add = (getopt_result == OPTION_ADD_USER_TAG);
-		const std::string arg = optarg;
-		const std::string::size_type splitloc = arg.find(',');
-		if(splitloc == arg.npos)
-		  {
-		    fprintf(stderr, _("No comma following tag name \"%s\".\n"), arg.c_str());
-		    return -1;
-		  }
-		else
-		  {
-		    const std::string patternstr(arg, splitloc + 1);
-		    const std::vector<const char *> terminators;
-		    cwidget::util::ref_ptr<aptitude::matching::pattern> p =
-		      aptitude::matching::parse(patternstr,
-						terminators,
-						true,
-						false);
-
-		    if(!p.valid())
-		      {
-			_error->DumpErrors();
-			return -1;
-		      }
-
-		    user_tags.push_back(tag_application(is_add, optarg, p));
-		  }
-	      }
-	    case OPTION_NOT_ARCH_ONLY:
-	      arch_only = false;
-	      break;
-	    case OPTION_ARCH_ONLY:
-	      arch_only = true;
-	      break;
-	    case OPTION_DISABLE_COLUMNS:
-	      disable_columns = true;
-	      break;
-#ifdef HAVE_GTK
-	    case OPTION_GUI:
-	      use_gtk_gui = true;
-	      break;
-	    case OPTION_NO_GUI:
-	      use_gtk_gui = false;
-	      break;
-#else
-	    case OPTION_NO_GUI:
-	      // Recognize it as a NOP.
-	      break;
-#endif
-	    case OPTION_LOG_LEVEL:
-	      apply_logging_level(optarg);
-	      break;
-	    case OPTION_LOG_FILE:
-	      log_file = optarg;
-	      break;
-	    case OPTION_LOG_RESOLVER:
-	      enable_resolver_log();
-	      break;
-
-	    case OPTION_SHOW_SUMMARY:
-	      if(optarg == NULL)
-		show_why_summary_mode = "first-package";
-	      else
-		show_why_summary_mode = optarg;
-	      break;
-
-	    case OPTION_AUTOCLEAN_ON_STARTUP:
-	      autoclean_only = true;
-	      break;
-
-	    case OPTION_CLEAN_ON_STARTUP:
-	      clean_only = true;
-	      break;
-
-            case OPTION_GROUP_BY:
-              group_by_mode_string = optarg;
-              break;
-
-            case OPTION_SHOW_PACKAGE_NAMES:
-              show_package_names_mode_string = optarg;
-              break;
-
-            case OPTION_NEW_GUI:
-#ifdef HAVE_GTK
-              use_new_gtk_gui = true;
-#endif
-              break;
-#ifdef HAVE_QT
-	    case OPTION_QT_GUI:
-	      use_qt_gui = true;
-	      break;
-
-	    case OPTION_NO_QT_GUI:
-	      use_qt_gui = false;
-	      break;
-#endif
-	    default:
-	      fprintf(stderr, "%s",
-		      _("WEIRDNESS: unknown option code received\n"));
-	      break;
-	    }
-
-	  getopt_result=0;
-
-	  break;
-
-	default:
-	  fprintf(stderr, "%s",
-		  _("WEIRDNESS: unknown option code received\n"));
-	  break;
-	}
+      if(strcasecmp("--show-summary", argv[i]) == 0)
+        argv[i] = "--show-summary=first-package";
     }
+
+  // Parse the command line options.
+  CommandLine cmdl(args, _config);
+  if(cmdl.Parse(argc, argv) == false)
+    {
+      _error->DumpErrors(std::cerr, GlobalError::WARNING, false);
+      usage();
+      exit(1);
+    }
+
+  if(aptcfg->FindB("help", false) == true)
+    {
+      usage();
+      exit(0);
+    }
+
+  if(aptcfg->FindB("version", false) == true)
+    {
+      show_version();
+      exit(0);
+    }
+
+  // HACK: Handle arguments not directly supported by CommandLine.
+  {
+    string display_format = _config->Find("display-format", "");
+    if(display_format.empty() == false)
+      {
+        _config->Set(PACKAGE "::CmdLine::Package-Display-Format", display_format);
+        _config->Set(PACKAGE "::CmdLine::Version-Display-Format", display_format);
+        _config->Clear("display-format");
+      }
+
+    if(_config->FindB("without-recommends", false) == true)
+      {
+        _config->Set("APT::Install-Recommends", false);
+        _config->Set("APT::AutoRemove::Recommends-Important", true);
+        _config->Clear("without-recommends");
+      }
+
+    if(_config->FindB("log-resolver", false) == true)
+      {
+        _config->Set(PACKAGE "::Logging::Levels::", "aptitude.resolver.search:trace");
+        _config->Set(PACKAGE "::Logging::Levels::", "aptitude.resolver.search.costs:info");
+        _config->Clear("log-resolver");
+      }
+  }
+
+  // The filename to read status information from.
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
+  string package_display_format = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Format", "%c%a%M %p# - %d#");
+  string version_display_format = aptcfg->Find(PACKAGE "::CmdLine::Version-Display-Format", "%c%a%M %p# %t %i");
+  string group_by_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Group-By", "auto");
+  string show_package_names_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Show-Package-Names", "auto");
+  string sort_policy = aptcfg->Find(PACKAGE "::CmdLine::Package-Sorting", "name,version");
+  string width = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Width", "");
+  // Set to a non-empty string to enable logging simplistically; set
+  // to "-" to log to stdout.
+  string log_file = aptcfg->Find(PACKAGE "::Logging::File", "");
+  bool simulate = aptcfg->FindB(PACKAGE "::CmdLine::Simulate", false) ||
+    aptcfg->FindB(PACKAGE "::Simulate", false);
+  bool download_only=aptcfg->FindB(PACKAGE "::CmdLine::Download-Only", false);;
+  bool arch_only = aptcfg->FindB("Apt::Get::Arch-Only", false);
+
+  bool autoclean_only = aptcfg->FindB(PACKAGE "::UI::Autoclean-On-Startup", false);
+  bool clean_only = aptcfg->FindB(PACKAGE "::UI::Clean-On-Startup", false);
+  bool update_only = aptcfg->FindB(PACKAGE "::UI::Update-On-Startup", false);
+  bool install_only = aptcfg->FindB(PACKAGE "::UI::Install-On-Startup", false);
+  bool queue_only = aptcfg->FindB(PACKAGE "::CmdLine::Schedule-Only", false);
+  bool assume_yes=aptcfg->FindB(PACKAGE "::CmdLine::Assume-Yes", false);
+  bool fix_broken=aptcfg->FindB(PACKAGE "::CmdLine::Fix-Broken", false);
+  bool safe_resolver_no_new_installs = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Installs", false);
+  bool safe_resolver_no_new_upgrades = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Upgrades", false);
+  bool safe_resolver_show_resolver_actions = aptcfg->FindB(PACKAGE "::Safe-Resolver::Show-Resolver-Actions", false);
+
+  resolver_mode_tp resolver_mode = resolver_mode_default;
+  if(aptcfg->FindB(PACKAGE "::Always-Use-Safe-Resolver", false) ||
+     aptcfg->FindI("use-full-resolver", -1) == 0)
+    resolver_mode = resolver_mode_safe;
+  else if(aptcfg->FindI("use-full-resolver", -1) == 1)
+    resolver_mode = resolver_mode_full;
+
+  bool disable_columns = aptcfg->FindB(PACKAGE "::CmdLine::Disable-Columns", false);
+
+  bool showvers=aptcfg->FindB(PACKAGE "::CmdLine::Show-Versions", false);
+  bool showdeps=aptcfg->FindB(PACKAGE "::CmdLine::Show-Deps", false);
+  bool showsize=aptcfg->FindB(PACKAGE "::CmdLine::Show-Size-Changes", false);
+  bool showwhy = aptcfg->FindB(PACKAGE "::CmdLine::Show-Why", false);
+  string show_why_summary_mode =
+    aptcfg->Find(PACKAGE "::CmdLine::Show-Summary", "no-summary");
+  bool visual_preview=aptcfg->FindB(PACKAGE "::CmdLine::Visual-Preview", false);
+  bool always_prompt=aptcfg->FindB(PACKAGE "::CmdLine::Always-Prompt", false);
+  int verbose=aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
+  int quiet = aptcfg->FindI("quiet", 0);
+  std::vector<aptitude::cmdline::tag_application> user_tags;
+
+#ifdef HAVE_GTK
+  // TODO: this should be a configuration option.
+  bool use_gtk_gui = aptcfg->FindB(PACKAGE "::Start-Gui", true);
+  // Use the in-progress new GUI harness instead of the old code.
+  bool use_new_gtk_gui = aptcfg->FindB("new-gui", false);
+#endif
+
+#ifdef HAVE_QT
+  // Use Qt frontend.
+  bool use_qt_gui = aptcfg->FindB("use-qt-gui", false);
+#endif
 
   group_by_option group_by_mode;
   try
@@ -1037,6 +775,8 @@ int main(int argc, char *argv[])
       why_display_mode = aptitude::why::no_summary;
     }
 
+  apply_config_file_logging_levels(_config);
+
   if(!log_file.empty())
     Logger::getLogger("")
       ->connect_message_logged(sigc::bind(sigc::ptr_fun(&handle_message_logged),
@@ -1046,11 +786,8 @@ int main(int argc, char *argv[])
 
   const bool debug_search = aptcfg->FindB(PACKAGE "::CmdLine::Debug-Search", false);
 
-  int curr_quiet = aptcfg->FindI("quiet", 0);
-  if(seen_quiet)
-    aptcfg->SetNoUser("quiet", quiet);
   if(quiet == 0 && !isatty(1))
-    aptcfg->SetNoUser("quiet", std::max(curr_quiet, 1));
+    aptcfg->SetNoUser("quiet", 1);
 
   if(simulate)
     aptcfg->SetNoUser(PACKAGE "::Simulate", true);
@@ -1076,16 +813,11 @@ int main(int argc, char *argv[])
       }
   }
 
-  if((update_only || install_only || autoclean_only || clean_only) && optind != argc)
-    {
-      fprintf(stderr, "%s\n",
-	      _("-u, -i, and --clean-on-startup may not be specified in command-line mode (eg, with 'install')"));
-      usage();
-      exit(1);
-    }
-
   // Possibly run off and do other commands.
-  if(optind!=argc)
+  int filec = cmdl.FileSize();
+  char **filev = (char **) cmdl.FileList;
+
+  if(filec > 0)
     {
       try
 	{
@@ -1096,7 +828,7 @@ int main(int argc, char *argv[])
 	  if(update_only || install_only || autoclean_only || clean_only)
 	    {
 	      fprintf(stderr, "%s\n",
-		      _("-u, -i, and --clean-on-startup may not be specified with a command"));
+		      _("-u, -i, --clean-on-startup, and --autoclean-on-startup may not be specified with a command"));
 	      usage();
 	      exit(1);
 	    }
@@ -1104,24 +836,24 @@ int main(int argc, char *argv[])
 	  // TODO: warn the user if they passed --full-resolver to
 	  // something other than "upgrade" or do_action.
 
-	  if(!strcasecmp(argv[optind], "update"))
-	    return cmdline_update(argc-optind, argv+optind, verbose);
-	  else if(!strcasecmp(argv[optind], "clean"))
-	    return cmdline_clean(argc-optind, argv+optind, simulate);
-	  else if(!strcasecmp(argv[optind], "autoclean"))
-	    return cmdline_autoclean(argc-optind, argv+optind, simulate);
-	  else if(!strcasecmp(argv[optind], "forget-new"))
-	    return cmdline_forget_new(argc-optind, argv+optind,
+	  if(!strcasecmp(cmdl.FileList[0], "update"))
+	    return cmdline_update(filec, filev, verbose);
+	  else if(!strcasecmp(cmdl.FileList[0], "clean"))
+	    return cmdline_clean(filec, filev, simulate);
+	  else if(!strcasecmp(cmdl.FileList[0], "autoclean"))
+	    return cmdline_autoclean(filec, filev, simulate);
+	  else if(!strcasecmp(cmdl.FileList[0], "forget-new"))
+	    return cmdline_forget_new(filec, filev,
 				      status_fname, simulate);
-	  else if(!strcasecmp(argv[optind], "search"))
-	    return cmdline_search(argc-optind, argv+optind,
+	  else if(!strcasecmp(cmdl.FileList[0], "search"))
+	    return cmdline_search(filec, filev,
 				  status_fname,
 				  package_display_format, width,
 				  sort_policy,
 				  disable_columns,
 				  debug_search);
-          else if(!strcasecmp(argv[optind], "versions"))
-            return cmdline_versions(argc - optind, argv + optind,
+          else if(!strcasecmp(cmdl.FileList[0], "versions"))
+            return cmdline_versions(filec, filev,
                                     status_fname,
                                     version_display_format, width,
                                     sort_policy,
@@ -1129,33 +861,33 @@ int main(int argc, char *argv[])
                                     debug_search,
                                     group_by_mode,
                                     show_package_names_mode);
-	  else if(!strcasecmp(argv[optind], "why"))
-	    return cmdline_why(argc - optind, argv + optind,
+	  else if(!strcasecmp(cmdl.FileList[0], "why"))
+	    return cmdline_why(filec, filev,
 			       status_fname, verbose,
 			       why_display_mode, false);
-	  else if(!strcasecmp(argv[optind], "why-not"))
-	    return cmdline_why(argc - optind, argv + optind,
+	  else if(!strcasecmp(cmdl.FileList[0], "why-not"))
+	    return cmdline_why(filec, filev,
 			       status_fname, verbose,
 			       why_display_mode, true);
-	  else if( (!strcasecmp(argv[optind], "install")) ||
-		   (!strcasecmp(argv[optind], "reinstall")) ||
-		   (!strcasecmp(argv[optind], "dist-upgrade")) ||
-		   (!strcasecmp(argv[optind], "full-upgrade")) ||
-		   (!strcasecmp(argv[optind], "safe-upgrade")) ||
-		   (!strcasecmp(argv[optind], "upgrade")) ||
-		   (!strcasecmp(argv[optind], "remove")) ||
-		   (!strcasecmp(argv[optind], "purge")) ||
-		   (!strcasecmp(argv[optind], "hold")) ||
-		   (!strcasecmp(argv[optind], "unhold")) ||
-		   (!strcasecmp(argv[optind], "markauto")) ||
-		   (!strcasecmp(argv[optind], "unmarkauto")) ||
-		   (!strcasecmp(argv[optind], "forbid-version")) ||
-		   (!strcasecmp(argv[optind], "keep")) ||
-		   (!strcasecmp(argv[optind], "keep-all")) ||
-		   (!strcasecmp(argv[optind], "build-dep")) ||
-		   (!strcasecmp(argv[optind], "build-depends")))
+	  else if( (!strcasecmp(cmdl.FileList[0], "install")) ||
+		   (!strcasecmp(cmdl.FileList[0], "reinstall")) ||
+		   (!strcasecmp(cmdl.FileList[0], "dist-upgrade")) ||
+		   (!strcasecmp(cmdl.FileList[0], "full-upgrade")) ||
+		   (!strcasecmp(cmdl.FileList[0], "safe-upgrade")) ||
+		   (!strcasecmp(cmdl.FileList[0], "upgrade")) ||
+		   (!strcasecmp(cmdl.FileList[0], "remove")) ||
+		   (!strcasecmp(cmdl.FileList[0], "purge")) ||
+		   (!strcasecmp(cmdl.FileList[0], "hold")) ||
+		   (!strcasecmp(cmdl.FileList[0], "unhold")) ||
+		   (!strcasecmp(cmdl.FileList[0], "markauto")) ||
+		   (!strcasecmp(cmdl.FileList[0], "unmarkauto")) ||
+		   (!strcasecmp(cmdl.FileList[0], "forbid-version")) ||
+		   (!strcasecmp(cmdl.FileList[0], "keep")) ||
+		   (!strcasecmp(cmdl.FileList[0], "keep-all")) ||
+		   (!strcasecmp(cmdl.FileList[0], "build-dep")) ||
+		   (!strcasecmp(cmdl.FileList[0], "build-depends")))
 	    {
-	      return cmdline_do_action(argc-optind, argv+optind,
+	      return cmdline_do_action(filec, filev,
 				       status_fname,
 				       simulate, assume_yes, download_only,
 				       fix_broken, showvers, showdeps,
@@ -1166,39 +898,38 @@ int main(int argc, char *argv[])
 				       user_tags,
 				       arch_only, queue_only, verbose);
 	    }
-	  else if(!strcasecmp(argv[optind], "add-user-tag") ||
-		  !strcasecmp(argv[optind], "remove-user-tag"))
-	    return aptitude::cmdline::cmdline_user_tag(argc - optind, argv + optind,
-						       quiet, verbose);
-	  else if(!strcasecmp(argv[optind], "extract-cache-subset"))
-	    return aptitude::cmdline::extract_cache_subset(argc - optind,
-							   argv + optind);
-	  else if(!strcasecmp(argv[optind], "download"))
-	    return cmdline_download(argc-optind, argv+optind);
-	  else if(!strcasecmp(argv[optind], "changelog"))
-	    return cmdline_changelog(argc-optind, argv+optind);
-	  else if(!strcasecmp(argv[optind], "moo"))
-	    return cmdline_moo(argc-optind, argv+optind, verbose);
-	  else if(!strcasecmp(argv[optind], "show"))
-	    return cmdline_show(argc-optind, argv+optind, verbose);
-	  else if(!strcasecmp(argv[optind], "dump-resolver"))
-	    return cmdline_dump_resolver(argc-optind, argv+optind, status_fname);
-	  else if(!strcasecmp(argv[optind], "check-resolver"))
-	    return cmdline_check_resolver(argc-optind, argv+optind, status_fname);
-	  else if(!strcasecmp(argv[optind], "help"))
+	  else if(!strcasecmp(cmdl.FileList[0], "add-user-tag") ||
+		  !strcasecmp(cmdl.FileList[0], "remove-user-tag"))
+	    return aptitude::cmdline::cmdline_user_tag(filec, filev,
+                                                       quiet, verbose);
+	  else if(!strcasecmp(cmdl.FileList[0], "extract-cache-subset"))
+	    return aptitude::cmdline::extract_cache_subset(filec, filev);
+	  else if(!strcasecmp(cmdl.FileList[0], "download"))
+	    return cmdline_download(filec, filev);
+	  else if(!strcasecmp(cmdl.FileList[0], "changelog"))
+	    return cmdline_changelog(filec, filev);
+	  else if(!strcasecmp(cmdl.FileList[0], "moo"))
+	    return cmdline_moo(filec, filev, verbose);
+	  else if(!strcasecmp(cmdl.FileList[0], "show"))
+	    return cmdline_show(filec, filev, verbose);
+	  else if(!strcasecmp(cmdl.FileList[0], "dump-resolver"))
+	    return cmdline_dump_resolver(filec, filev, status_fname);
+	  else if(!strcasecmp(cmdl.FileList[0], "check-resolver"))
+	    return cmdline_check_resolver(filec, filev, status_fname);
+	  else if(!strcasecmp(cmdl.FileList[0], "help"))
 	    {
 	      usage();
 	      exit(0);
 	    }
 	  // Debugging/profiling commands:
-	  else if(!strcasecmp(argv[optind], "nop"))
+	  else if(!strcasecmp(cmdl.FileList[0], "nop"))
 	    {
 	      OpTextProgress p(aptcfg->FindI("Quiet", 0));
 	      _error->DumpErrors();
 	      apt_init(&p, true);
 	      exit(0);
 	    }
-	  else if(!strcasecmp(argv[optind], "nop-noselections"))
+	  else if(!strcasecmp(cmdl.FileList[0], "nop-noselections"))
 	    {
 	      OpTextProgress p(aptcfg->FindI("Quiet", 0));
 	      _error->DumpErrors();
@@ -1207,7 +938,7 @@ int main(int argc, char *argv[])
 	    }
 	  else
 	    {
-	      fprintf(stderr, _("Unknown command \"%s\"\n"), argv[optind]);
+	      fprintf(stderr, _("Unknown command \"%s\"\n"), cmdl.FileList[0]);
 	      usage();
 	      exit(1);
 	    }
