@@ -41,6 +41,7 @@
 #include <cwidget/generic/util/transcode.h>
 
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/init.h>
 #include <apt-pkg/pkgcache.h>
 #include <apt-pkg/pkgrecords.h>
@@ -624,8 +625,9 @@ bool do_cmdline_show(string s, int verbose, const shared_ptr<terminal_metrics> &
   return true;
 }
 
-int cmdline_show(int argc, char *argv[], int verbose)
+bool cmdline_show(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
   shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
@@ -634,23 +636,16 @@ int cmdline_show(int argc, char *argv[], int verbose)
   apt_init(progress.get(), false);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
+
+  const int verbose = aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
 
   for(int i=1; i<argc; ++i)
-    if(!do_cmdline_show(argv[i], verbose, term))
-      {
-	_error->DumpErrors();
-	return -1;
-      }
+    if(!do_cmdline_show(cmdl.FileList[i], verbose, term))
+      return false;
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
-  return 0;
+  return true;
 }

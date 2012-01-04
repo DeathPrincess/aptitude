@@ -22,6 +22,7 @@
 
 #include <apt-pkg/acquire.h>
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/progress.h>
 #include <apt-pkg/sourcelist.h>
 
@@ -36,15 +37,13 @@ using aptitude::cmdline::terminal_locale;
 using boost::shared_ptr;
 
 // Download stuff to the current directory
-int cmdline_download(int argc, char *argv[])
+bool cmdline_download(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
   shared_ptr<terminal_io> term = create_terminal();
 
-  if(argc<=1)
-    {
-      printf(_("download: you must specify at least one package to download\n"));
-      return -1;
-    }
+  if(argc <= 1)
+    return _error->Error(_("download: You must specify at least one package to download"));
 
   _error->DumpErrors();
 
@@ -53,12 +52,7 @@ int cmdline_download(int argc, char *argv[])
 
   pkgSourceList list;
   if(!list.ReadMainList())
-    {
-      _error->Error(_("Couldn't read source list"));
-
-      _error->DumpErrors();
-      return -1;
-    }
+    return _error->Error(_("Couldn't read source list"));
 
   std::pair<download_signal_log *, boost::shared_ptr<acquire_download_progress> >
     progress_display = create_cmdline_download_progress(term, term, term, term);
@@ -72,7 +66,7 @@ int cmdline_download(int argc, char *argv[])
     {
       cmdline_version_source source;
       string name, sourcestr;
-      if(!cmdline_parse_source(argv[i], source, name, sourcestr))
+      if(!cmdline_parse_source(cmdl.FileList[i], source, name, sourcestr))
 	continue;
 
       if(source == cmdline_version_cand && !default_release.empty())
@@ -100,10 +94,7 @@ int cmdline_download(int argc, char *argv[])
 	  using cwidget::util::ref_ptr;
 	  ref_ptr<pattern> p(parse(name.c_str()));
 	  if(!p.valid())
-	    {
-	      _error->DumpErrors();
-	      return false;
-	    }
+            return false;
 
 	  std::vector<std::pair<pkgCache::PkgIterator, ref_ptr<structural_match> > > matches;
 	  ref_ptr<search_cache> search_info(search_cache::create());
@@ -142,10 +133,7 @@ int cmdline_download(int argc, char *argv[])
 
   if(fetcher.Run()!=pkgAcquire::Continue)
     // We failed or were cancelled
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
-  return 0;
+  return true;
 }

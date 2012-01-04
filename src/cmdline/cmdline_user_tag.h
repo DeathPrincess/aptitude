@@ -20,6 +20,8 @@
 #ifndef CMDLINE_USER_TAG_H
 #define CMDLINE_USER_TAG_H
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_user_tag.h
  */
 
@@ -28,7 +30,7 @@ namespace aptitude
   namespace cmdline
   {
     /** \brief Add or remove a user tag depending on the value of argv[0]. */
-    int cmdline_user_tag(int argc, char *argv[], int quiet, int verbose);
+    bool cmdline_user_tag(CommandLine &cmdl);
   }
 }
 

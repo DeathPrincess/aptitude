@@ -21,6 +21,8 @@
 #define CMDLINE_CHANGELOG_H
 
 // System includes:
+#include <apt-pkg/cmndline.h>
+
 #include <boost/shared_ptr.hpp>
 
 #include <string>
@@ -45,6 +47,6 @@ namespace aptitude
 void do_cmdline_changelog(const std::vector<std::string> &packages,
                           const boost::shared_ptr<aptitude::cmdline::terminal_metrics> &term_metrics);
 
-int cmdline_changelog(int argc, char *argv[]);
+bool cmdline_changelog(CommandLine &cmdl);
 
 #endif // CMDLINE_CHANGELOG_H

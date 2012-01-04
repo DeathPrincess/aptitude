@@ -256,6 +256,21 @@ static void usage()
   printf(_("                  This aptitude does not have Super Cow Powers.\n"));
 }
 
+static bool cmdline_help(CommandLine &cmdl)
+{
+  usage();
+  return true;
+}
+
+static bool cmdline_nop(CommandLine &cmdl)
+{
+  const bool do_selections = strcasecmp(cmdl.FileList[0], "nop") == 0;
+  OpTextProgress p(aptcfg->FindI("quiet", 0));
+  _error->DumpErrors();
+  apt_init(&p, do_selections);
+  return true;
+}
+
 CommandLine::Args args[] = {
   {'h', "help", "help", 0},
   {0, "version", "version", 0},
@@ -314,6 +329,47 @@ CommandLine::Args args[] = {
   {'c', "config-file", 0, CommandLine::ConfigFile},
   {'o', "option", 0, CommandLine::ArbItem},
   {0,0,0,0}
+};
+
+CommandLine::Dispatch cmds[] = {
+  {"update", &cmdline_update},
+  {"clean", &cmdline_clean},
+  {"autoclean", &cmdline_autoclean},
+  {"forget-new", &cmdline_forget_new},
+  {"search", &cmdline_search},
+  {"versions", &cmdline_versions},
+  {"why", &cmdline_why},
+  {"why-not", &cmdline_why},
+  {"install", &cmdline_do_action},
+  {"reinstall", &cmdline_do_action},
+  {"dist-upgrade", &cmdline_do_action},
+  {"full-upgrade", &cmdline_do_action},
+  {"safe-upgrade", &cmdline_do_action},
+  {"upgrade", &cmdline_do_action},
+  {"remove", &cmdline_do_action},
+  {"purge", &cmdline_do_action},
+  {"hold", &cmdline_do_action},
+  {"unhold", &cmdline_do_action},
+  {"markauto", &cmdline_do_action},
+  {"unmarkauto", &cmdline_do_action},
+  {"forbid-version", &cmdline_do_action},
+  {"keep", &cmdline_do_action},
+  {"keep-all", &cmdline_do_action},
+  {"build-dep", &cmdline_do_action},
+  {"build-depends", &cmdline_do_action},
+  {"add-user-tag", &aptitude::cmdline::cmdline_user_tag},
+  {"remove-user-tag", &aptitude::cmdline::cmdline_user_tag},
+  {"extract-cache-subset", &aptitude::cmdline::extract_cache_subset},
+  {"download", &cmdline_download},
+  {"changelog", &cmdline_changelog},
+  {"moo", &cmdline_moo},
+  {"show", &cmdline_show},
+  {"dump-resolver", &cmdline_dump_resolver},
+  {"check-resolver", &cmdline_check_resolver},
+  {"help", &cmdline_help},
+  {"nop", &cmdline_nop},
+  {"nop-noselections", &cmdline_nop},
+  {0,0}
 };
 
 const char *argv0;
@@ -549,6 +605,11 @@ void handle_message_logged(const char *sourceFilename,
     }
 }
 
+void dump_errors ()
+{
+  _error->DumpErrors();
+}
+
 int main(int argc, const char *argv[])
 {
   // Block signals that we want to sigwait() on by default and put the
@@ -668,51 +729,17 @@ int main(int argc, const char *argv[])
   char *status_fname=NULL;
   if(aptcfg->Find("status-fname", "").empty() == false)
     status_fname = strdup(aptcfg->Find("status-fname").c_str());
-  string package_display_format = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Format", "%c%a%M %p# - %d#");
-  string version_display_format = aptcfg->Find(PACKAGE "::CmdLine::Version-Display-Format", "%c%a%M %p# %t %i");
-  string group_by_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Group-By", "auto");
-  string show_package_names_mode_string = aptcfg->Find(PACKAGE "::CmdLine::Versions-Show-Package-Names", "auto");
-  string sort_policy = aptcfg->Find(PACKAGE "::CmdLine::Package-Sorting", "name,version");
-  string width = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Width", "");
   // Set to a non-empty string to enable logging simplistically; set
   // to "-" to log to stdout.
   string log_file = aptcfg->Find(PACKAGE "::Logging::File", "");
   bool simulate = aptcfg->FindB(PACKAGE "::CmdLine::Simulate", false) ||
     aptcfg->FindB(PACKAGE "::Simulate", false);
-  bool download_only=aptcfg->FindB(PACKAGE "::CmdLine::Download-Only", false);;
-  bool arch_only = aptcfg->FindB("Apt::Get::Arch-Only", false);
 
   bool autoclean_only = aptcfg->FindB(PACKAGE "::UI::Autoclean-On-Startup", false);
   bool clean_only = aptcfg->FindB(PACKAGE "::UI::Clean-On-Startup", false);
   bool update_only = aptcfg->FindB(PACKAGE "::UI::Update-On-Startup", false);
   bool install_only = aptcfg->FindB(PACKAGE "::UI::Install-On-Startup", false);
-  bool queue_only = aptcfg->FindB(PACKAGE "::CmdLine::Schedule-Only", false);
-  bool assume_yes=aptcfg->FindB(PACKAGE "::CmdLine::Assume-Yes", false);
-  bool fix_broken=aptcfg->FindB(PACKAGE "::CmdLine::Fix-Broken", false);
-  bool safe_resolver_no_new_installs = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Installs", false);
-  bool safe_resolver_no_new_upgrades = aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Upgrades", false);
-  bool safe_resolver_show_resolver_actions = aptcfg->FindB(PACKAGE "::Safe-Resolver::Show-Resolver-Actions", false);
-
-  resolver_mode_tp resolver_mode = resolver_mode_default;
-  if(aptcfg->FindB(PACKAGE "::Always-Use-Safe-Resolver", false) ||
-     aptcfg->FindI("use-full-resolver", -1) == 0)
-    resolver_mode = resolver_mode_safe;
-  else if(aptcfg->FindI("use-full-resolver", -1) == 1)
-    resolver_mode = resolver_mode_full;
-
-  bool disable_columns = aptcfg->FindB(PACKAGE "::CmdLine::Disable-Columns", false);
-
-  bool showvers=aptcfg->FindB(PACKAGE "::CmdLine::Show-Versions", false);
-  bool showdeps=aptcfg->FindB(PACKAGE "::CmdLine::Show-Deps", false);
-  bool showsize=aptcfg->FindB(PACKAGE "::CmdLine::Show-Size-Changes", false);
-  bool showwhy = aptcfg->FindB(PACKAGE "::CmdLine::Show-Why", false);
-  string show_why_summary_mode =
-    aptcfg->Find(PACKAGE "::CmdLine::Show-Summary", "no-summary");
-  bool visual_preview=aptcfg->FindB(PACKAGE "::CmdLine::Visual-Preview", false);
-  bool always_prompt=aptcfg->FindB(PACKAGE "::CmdLine::Always-Prompt", false);
-  int verbose=aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
   int quiet = aptcfg->FindI("quiet", 0);
-  std::vector<aptitude::cmdline::tag_application> user_tags;
 
 #ifdef HAVE_GTK
   // TODO: this should be a configuration option.
@@ -726,55 +753,6 @@ int main(int argc, const char *argv[])
   bool use_qt_gui = aptcfg->FindB("use-qt-gui", false);
 #endif
 
-  group_by_option group_by_mode;
-  try
-    {
-      group_by_mode = parse_group_by_option(group_by_mode_string);
-    }
-  catch(std::exception &ex)
-    {
-      _error->Error("%s", ex.what());
-      group_by_mode = group_by_auto;
-    }
-
-  show_package_names_option show_package_names_mode;
-  if(show_package_names_mode_string == "never" ||
-     show_package_names_mode_string == P_("--show-package-names|never"))
-    show_package_names_mode = show_package_names_never;
-  else if(show_package_names_mode_string == "auto" ||
-          show_package_names_mode_string == P_("--show-package-names|auto"))
-    show_package_names_mode = show_package_names_auto;
-  else if(show_package_names_mode_string == "always" ||
-          show_package_names_mode_string == P_("--show-package-names|always"))
-    show_package_names_mode = show_package_names_always;
-  else
-    {
-      _error->Error("%s",
-                    (boost::format(_("Invalid package names display mode \"%s\" (should be \"never\", \"auto\", or \"always\")."))
-                     % show_package_names_mode_string).str().c_str());
-      show_package_names_mode = show_package_names_auto;
-    }
-
-  aptitude::why::roots_string_mode why_display_mode;
-  if(show_why_summary_mode == "no-summary" || show_why_summary_mode == _("no-summary"))
-    why_display_mode = aptitude::why::no_summary;
-  else if(show_why_summary_mode == "first-package" || show_why_summary_mode == _("first-package"))
-    why_display_mode = aptitude::why::show_requiring_packages;
-  else if(show_why_summary_mode == "first-package-and-type" || show_why_summary_mode == _("first-package-and-type"))
-    why_display_mode = aptitude::why::show_requiring_packages_and_strength;
-  else if(show_why_summary_mode == "all-packages" || show_why_summary_mode == _("all-packages"))
-    why_display_mode = aptitude::why::show_chain;
-  else if(show_why_summary_mode == "all-packages-with-dep-versions" || show_why_summary_mode == _("all-packages-with-dep-versions"))
-    why_display_mode = aptitude::why::show_chain_with_versions;
-  else
-    {
-      // ForTranslators: "why" here is the aptitude command name and
-      // should not be translated.
-      _error->Error(_("Invalid \"why\" summary mode \"%s\": expected \"no-summary\", \"first-package\", \"first-package-and-type\", \"all-packages\", or \"all-packages-with-dep-versions\"."),
-		    show_why_summary_mode.c_str());
-      why_display_mode = aptitude::why::no_summary;
-    }
-
   apply_config_file_logging_levels(_config);
 
   if(!log_file.empty())
@@ -783,8 +761,6 @@ int main(int argc, const char *argv[])
                                           log_file));
 
   temp::initialize("aptitude");
-
-  const bool debug_search = aptcfg->FindB(PACKAGE "::CmdLine::Debug-Search", false);
 
   if(quiet == 0 && !isatty(1))
     aptcfg->SetNoUser("quiet", 1);
@@ -814,10 +790,7 @@ int main(int argc, const char *argv[])
   }
 
   // Possibly run off and do other commands.
-  int filec = cmdl.FileSize();
-  char **filev = (char **) cmdl.FileList;
-
-  if(filec > 0)
+  if(cmdl.FileSize() > 0)
     {
       try
 	{
@@ -836,112 +809,12 @@ int main(int argc, const char *argv[])
 	  // TODO: warn the user if they passed --full-resolver to
 	  // something other than "upgrade" or do_action.
 
-	  if(!strcasecmp(cmdl.FileList[0], "update"))
-	    return cmdline_update(filec, filev, verbose);
-	  else if(!strcasecmp(cmdl.FileList[0], "clean"))
-	    return cmdline_clean(filec, filev, simulate);
-	  else if(!strcasecmp(cmdl.FileList[0], "autoclean"))
-	    return cmdline_autoclean(filec, filev, simulate);
-	  else if(!strcasecmp(cmdl.FileList[0], "forget-new"))
-	    return cmdline_forget_new(filec, filev,
-				      status_fname, simulate);
-	  else if(!strcasecmp(cmdl.FileList[0], "search"))
-	    return cmdline_search(filec, filev,
-				  status_fname,
-				  package_display_format, width,
-				  sort_policy,
-				  disable_columns,
-				  debug_search);
-          else if(!strcasecmp(cmdl.FileList[0], "versions"))
-            return cmdline_versions(filec, filev,
-                                    status_fname,
-                                    version_display_format, width,
-                                    sort_policy,
-                                    disable_columns,
-                                    debug_search,
-                                    group_by_mode,
-                                    show_package_names_mode);
-	  else if(!strcasecmp(cmdl.FileList[0], "why"))
-	    return cmdline_why(filec, filev,
-			       status_fname, verbose,
-			       why_display_mode, false);
-	  else if(!strcasecmp(cmdl.FileList[0], "why-not"))
-	    return cmdline_why(filec, filev,
-			       status_fname, verbose,
-			       why_display_mode, true);
-	  else if( (!strcasecmp(cmdl.FileList[0], "install")) ||
-		   (!strcasecmp(cmdl.FileList[0], "reinstall")) ||
-		   (!strcasecmp(cmdl.FileList[0], "dist-upgrade")) ||
-		   (!strcasecmp(cmdl.FileList[0], "full-upgrade")) ||
-		   (!strcasecmp(cmdl.FileList[0], "safe-upgrade")) ||
-		   (!strcasecmp(cmdl.FileList[0], "upgrade")) ||
-		   (!strcasecmp(cmdl.FileList[0], "remove")) ||
-		   (!strcasecmp(cmdl.FileList[0], "purge")) ||
-		   (!strcasecmp(cmdl.FileList[0], "hold")) ||
-		   (!strcasecmp(cmdl.FileList[0], "unhold")) ||
-		   (!strcasecmp(cmdl.FileList[0], "markauto")) ||
-		   (!strcasecmp(cmdl.FileList[0], "unmarkauto")) ||
-		   (!strcasecmp(cmdl.FileList[0], "forbid-version")) ||
-		   (!strcasecmp(cmdl.FileList[0], "keep")) ||
-		   (!strcasecmp(cmdl.FileList[0], "keep-all")) ||
-		   (!strcasecmp(cmdl.FileList[0], "build-dep")) ||
-		   (!strcasecmp(cmdl.FileList[0], "build-depends")))
-	    {
-	      return cmdline_do_action(filec, filev,
-				       status_fname,
-				       simulate, assume_yes, download_only,
-				       fix_broken, showvers, showdeps,
-				       showsize, showwhy,
-				       visual_preview, always_prompt,
-				       resolver_mode, safe_resolver_show_resolver_actions,
-				       safe_resolver_no_new_installs, safe_resolver_no_new_upgrades,
-				       user_tags,
-				       arch_only, queue_only, verbose);
-	    }
-	  else if(!strcasecmp(cmdl.FileList[0], "add-user-tag") ||
-		  !strcasecmp(cmdl.FileList[0], "remove-user-tag"))
-	    return aptitude::cmdline::cmdline_user_tag(filec, filev,
-                                                       quiet, verbose);
-	  else if(!strcasecmp(cmdl.FileList[0], "extract-cache-subset"))
-	    return aptitude::cmdline::extract_cache_subset(filec, filev);
-	  else if(!strcasecmp(cmdl.FileList[0], "download"))
-	    return cmdline_download(filec, filev);
-	  else if(!strcasecmp(cmdl.FileList[0], "changelog"))
-	    return cmdline_changelog(filec, filev);
-	  else if(!strcasecmp(cmdl.FileList[0], "moo"))
-	    return cmdline_moo(filec, filev, verbose);
-	  else if(!strcasecmp(cmdl.FileList[0], "show"))
-	    return cmdline_show(filec, filev, verbose);
-	  else if(!strcasecmp(cmdl.FileList[0], "dump-resolver"))
-	    return cmdline_dump_resolver(filec, filev, status_fname);
-	  else if(!strcasecmp(cmdl.FileList[0], "check-resolver"))
-	    return cmdline_check_resolver(filec, filev, status_fname);
-	  else if(!strcasecmp(cmdl.FileList[0], "help"))
-	    {
-	      usage();
-	      exit(0);
-	    }
-	  // Debugging/profiling commands:
-	  else if(!strcasecmp(cmdl.FileList[0], "nop"))
-	    {
-	      OpTextProgress p(aptcfg->FindI("Quiet", 0));
-	      _error->DumpErrors();
-	      apt_init(&p, true);
-	      exit(0);
-	    }
-	  else if(!strcasecmp(cmdl.FileList[0], "nop-noselections"))
-	    {
-	      OpTextProgress p(aptcfg->FindI("Quiet", 0));
-	      _error->DumpErrors();
-	      apt_init(&p, false);
-	      exit(0);
-	    }
-	  else
-	    {
-	      fprintf(stderr, _("Unknown command \"%s\"\n"), cmdl.FileList[0]);
-	      usage();
-	      exit(1);
-	    }
+          atexit(dump_errors);
+          atexit(apt_shutdown);
+
+          cmdl.DispatchArg(cmds);
+
+          return _error->PendingError() == true ? -1 : 0;
 	}
       catch(StdinEOFException)
 	{

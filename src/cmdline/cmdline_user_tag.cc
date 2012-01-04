@@ -27,13 +27,17 @@
 
 #include <aptitude.h>
 
-#include <apt-pkg/error.h>
-
 #include <generic/apt/apt.h>
 #include <generic/apt/aptcache.h>
+#include <generic/apt/config_signal.h>
 #include <generic/apt/matching/match.h>
 #include <generic/apt/matching/parse.h>
 #include <generic/apt/matching/pattern.h>
+
+
+// System includes:
+#include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -80,30 +84,27 @@ namespace aptitude
       }
     }
 
-    int cmdline_user_tag(int argc, char *argv[], int quiet, int verbose)
+    bool cmdline_user_tag(CommandLine &cmdl)
     {
+      const int argc = cmdl.FileSize();
       const shared_ptr<terminal_io> term = create_terminal();
 
       user_tag_action action = (user_tag_action)-1;
 
-      if(strcmp(argv[0], "add-user-tag") == 0)
+      if(strcmp(cmdl.FileList[0], "add-user-tag") == 0)
 	action = action_add;
-      else if(strcmp(argv[0], "remove-user-tag") == 0)
+      else if(strcmp(cmdl.FileList[0], "remove-user-tag") == 0)
 	action = action_remove;
       else
 	{
 	  fprintf(stderr, "Internal error: cmdline_user_tag encountered an unknown command name \"%s\"\n",
-		  argv[0]);
-	  return -1;
+		  cmdl.FileList[0]);
+	  abort();
 	}
 
       if(argc < 3)
-	{
-	  fprintf(stderr,
-		  _("%s: too few arguments; expected at least a tag name and a package.\n"),
-		  argv[0]);
-	  return -1;
-	}
+        return _error->Error(_("%s: too few arguments; expected at least a tag name and a package"),
+                             cmdl.FileList[0]);
 
       _error->DumpErrors();
 
@@ -111,23 +112,23 @@ namespace aptitude
 
       apt_init(&progress, true);
       if(_error->PendingError())
-	{
-	  _error->DumpErrors();
-	  return -1;
-	}
+        return false;
 
-      std::string tag(argv[1]);
+      std::string tag(cmdl.FileList[1]);
+
+      const int quiet = aptcfg->FindI("quiet", 0);
+      const int verbose = aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
 
       bool all_ok = true;
       for(int i = 2; i < argc; ++i)
 	{
-	  if(!aptitude::matching::is_pattern(argv[i]))
+	  if(!aptitude::matching::is_pattern(cmdl.FileList[i]))
 	    {
-	      pkgCache::PkgIterator pkg = (*apt_cache_file)->FindPkg(argv[i]);
+	      pkgCache::PkgIterator pkg = (*apt_cache_file)->FindPkg(cmdl.FileList[i]);
 	      if(pkg.end())
 		{
 		  if(quiet == 0)
-		    fprintf(stderr, _("No such package \"%s\".\n"), argv[i]);
+		    fprintf(stderr, _("No such package \"%s\".\n"), cmdl.FileList[i]);
 		  all_ok = false;
 		}
 	      else
@@ -138,7 +139,7 @@ namespace aptitude
 	      using namespace aptitude::matching;
 	      using cwidget::util::ref_ptr;
 
-	      ref_ptr<pattern> p(parse(argv[i]));
+	      ref_ptr<pattern> p(parse(cmdl.FileList[i]));
 
 	      if(!p.valid())
 		{
@@ -163,10 +164,10 @@ namespace aptitude
 
       shared_ptr<OpProgress> text_progress = make_text_progress(false, term, term, term);
       if(!(*apt_cache_file)->save_selection_list(*text_progress))
-	return 1;
+	exit(1);
 
       if(!all_ok)
-	return 2;
+	exit(2);
 
       return 0;
     }

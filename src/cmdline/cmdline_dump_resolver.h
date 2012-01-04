@@ -20,10 +20,12 @@
 #ifndef CMDLINE_DUMP_RESOLVER
 #define CMDLINE_DUMP_RESOLVER
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_dump_resolver.h
  */
 
-int cmdline_dump_resolver(int argc, char *argv[], const char *status_fname);
+bool cmdline_dump_resolver(CommandLine &cmdl);
 
 #endif
 

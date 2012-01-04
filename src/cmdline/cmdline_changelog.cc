@@ -35,6 +35,7 @@
 
 // System includes:
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/metaindex.h>
 #include <apt-pkg/progress.h>
 #include <apt-pkg/sourcelist.h>
@@ -432,8 +433,9 @@ void do_cmdline_changelog(const vector<string> &packages,
 }
 
 // TODO: fetch them all in one go.
-int cmdline_changelog(int argc, char *argv[])
+bool cmdline_changelog(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
   shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
@@ -442,18 +444,13 @@ int cmdline_changelog(int argc, char *argv[])
   apt_init(&progress, false);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   vector<string> packages;
   for(int i=1; i<argc; ++i)
-    packages.push_back(argv[i]);
+    packages.push_back(cmdl.FileList[i]);
 
   do_cmdline_changelog(packages, term);
 
-  _error->DumpErrors();
-
-  return 0;
+  return true;
 }

@@ -5,9 +5,11 @@
 #ifndef CMDLINE_DOWNLOAD_H
 #define CMDLINE_DOWNLOAD_H
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_download.h
  */
 
-int cmdline_download(int argc, char *argv[]);
+bool cmdline_download(CommandLine &cmdl);
 
 #endif // CMDLINE_DOWNLOAD_H

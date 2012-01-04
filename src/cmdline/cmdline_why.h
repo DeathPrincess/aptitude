@@ -33,6 +33,7 @@
 // System includes:
 #include <apt-pkg/depcache.h>
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/pkgcache.h>
 
 #include <cwidget/fragment.h>
@@ -89,15 +90,8 @@ namespace aptitude
  *  If -v is passed on the command-line, aptitude displays all the
  *  justifications it can find, rather than stopping at the shortest
  *  one.
- *
- *  \return 0 if a justification was found, -1 if an error occurred, and
- *  1 if no justification could be found.
  */
-int cmdline_why(int argc, char *argv[],
-		const char *status_fname, int verbosity,
-		aptitude::why::roots_string_mode display_mode,
-		bool why_not);
-
+bool cmdline_why(CommandLine &cmdl);
 
 // Direct access to the "why" algorithm.
 namespace cwidget

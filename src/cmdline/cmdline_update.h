@@ -5,9 +5,11 @@
 #ifndef CMDLINE_UPDATE_H
 #define CMDLINE_UPDATE_H
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_update.h
  */
 
-int cmdline_update(int argc, char *argv[], int verbose);
+bool cmdline_update(CommandLine &cmdl);
 
 #endif // CMDLINE_UPDATE_H

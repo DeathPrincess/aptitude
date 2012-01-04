@@ -41,6 +41,7 @@
 // System includes:
 #include <apt-pkg/algorithms.h>
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/policy.h>
 #include <apt-pkg/progress.h>
 
@@ -87,18 +88,23 @@ enum upgrade_mode_tp
 //
 // TODO: perhaps when trying to find a list of possible candidates for
 // installation, we should use a formatted display?
-int cmdline_do_action(int argc, char *argv[],
-		      const char *status_fname, bool simulate,
-		      bool assume_yes, bool download_only, bool fix_broken,
-		      bool showvers, bool showdeps,
-		      bool showsize, bool showwhy,
-		      bool visual_preview, bool always_prompt,
-		      resolver_mode_tp resolver_mode, bool safe_resolver_show_actions,
-		      bool no_new_installs, bool no_new_upgrades,
-		      const std::vector<aptitude::cmdline::tag_application> &user_tags,
-		      bool arch_only,
-		      bool queue_only, int verbose)
+bool cmdline_do_action(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
+  const int verbose = aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
+  const bool arch_only = aptcfg->FindB("Apt::Get::Arch-Only", false);
+  std::vector<aptitude::cmdline::tag_application> user_tags;
+
+  resolver_mode_tp resolver_mode = resolver_mode_default;
+  if(aptcfg->FindB(PACKAGE "::Always-Use-Safe-Resolver", false) ||
+     aptcfg->FindI("use-full-resolver", -1) == 0)
+    resolver_mode = resolver_mode_safe;
+  else if(aptcfg->FindI("use-full-resolver", -1) == 1)
+    resolver_mode = resolver_mode_full;
+
   shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
@@ -109,12 +115,12 @@ int cmdline_do_action(int argc, char *argv[],
 
   // Parse the action.  This sets the upgrade mode and (if it was not
   // overridden by the user) the resolver mode.
-  if(!strcasecmp(argv[0], "install"))
+  if(!strcasecmp(cmdl.FileList[0], "install"))
     default_action=cmdline_install;
-  else if(!strcasecmp(argv[0], "reinstall"))
+  else if(!strcasecmp(cmdl.FileList[0], "reinstall"))
     default_action=cmdline_reinstall;
-  else if(!strcasecmp(argv[0], "full-upgrade") ||
-	  !strcasecmp(argv[0], "dist-upgrade"))
+  else if(!strcasecmp(cmdl.FileList[0], "full-upgrade") ||
+	  !strcasecmp(cmdl.FileList[0], "dist-upgrade"))
     {
       default_action = cmdline_upgrade;
       if(argc == 1)
@@ -122,8 +128,8 @@ int cmdline_do_action(int argc, char *argv[],
       if(resolver_mode == resolver_mode_default)
 	resolver_mode = resolver_mode_full;
     }
-  else if(!strcasecmp(argv[0], "safe-upgrade") ||
-	  !strcasecmp(argv[0], "upgrade"))
+  else if(!strcasecmp(cmdl.FileList[0], "safe-upgrade") ||
+	  !strcasecmp(cmdl.FileList[0], "upgrade"))
     {
       default_action = cmdline_upgrade;
       // If safe-upgrade is the only argument, we treat this as a full
@@ -134,32 +140,28 @@ int cmdline_do_action(int argc, char *argv[],
       if(resolver_mode == resolver_mode_default)
 	resolver_mode = resolver_mode_safe;
     }
-  else if(!strcasecmp(argv[0], "remove"))
+  else if(!strcasecmp(cmdl.FileList[0], "remove"))
     default_action=cmdline_remove;
-  else if(!strcasecmp(argv[0], "purge"))
+  else if(!strcasecmp(cmdl.FileList[0], "purge"))
     default_action=cmdline_purge;
-  else if(!strcasecmp(argv[0], "hold"))
+  else if(!strcasecmp(cmdl.FileList[0], "hold"))
     default_action=cmdline_hold;
-  else if(!strcasecmp(argv[0], "keep") || !strcasecmp(argv[0], "keep-all"))
+  else if(!strcasecmp(cmdl.FileList[0], "keep") ||
+          !strcasecmp(cmdl.FileList[0], "keep-all"))
     default_action=cmdline_keep;
-  else if(!strcasecmp(argv[0], "unhold"))
+  else if(!strcasecmp(cmdl.FileList[0], "unhold"))
     default_action=cmdline_unhold;
-  else if(!strcasecmp(argv[0], "markauto"))
+  else if(!strcasecmp(cmdl.FileList[0], "markauto"))
     default_action=cmdline_markauto;
-  else if(!strcasecmp(argv[0], "unmarkauto"))
+  else if(!strcasecmp(cmdl.FileList[0], "unmarkauto"))
     default_action=cmdline_unmarkauto;
-  else if(!strcasecmp(argv[0], "forbid-version"))
+  else if(!strcasecmp(cmdl.FileList[0], "forbid-version"))
     default_action=cmdline_forbid_version;
-  else if(!strcasecmp(argv[0], "build-depends") ||
-	  !strcasecmp(argv[0], "build-dep"))
+  else if(!strcasecmp(cmdl.FileList[0], "build-depends") ||
+	  !strcasecmp(cmdl.FileList[0], "build-dep"))
     default_action = cmdline_build_depends;
   else
-    {
-      // Should never happen.
-      _error->Error(_("Invalid operation %s"), argv[0]);
-      _error->DumpErrors();
-      return -1;
-    }
+    return _error->Error(_("Invalid operation %s"), cmdl.FileList[0]);
 
   if(resolver_mode == resolver_mode_default)
     resolver_mode = resolver_mode_full;
@@ -176,12 +178,13 @@ int cmdline_do_action(int argc, char *argv[],
   apt_init(progress.get(),
            (argc==1 && default_action==cmdline_install &&
             upgrade_mode == no_upgrade), status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
+
+  const bool simulate = aptcfg->FindB(PACKAGE "::Simulate", false);
 
   // In case we aren't root.
   if(!simulate)
@@ -190,10 +193,7 @@ int cmdline_do_action(int argc, char *argv[],
     apt_cache_file->ReleaseLock();
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   pkgPolicy policy(&(*apt_cache_file)->GetCache());
   ReadPinFile(policy);
@@ -226,13 +226,10 @@ int cmdline_do_action(int argc, char *argv[],
 
   // If keep-all is the argument, we expect no patterns and keep all
   // packages back.
-  if(!strcasecmp(argv[0], "keep-all"))
+  if(!strcasecmp(cmdl.FileList[0], "keep-all"))
     {
       if(argc != 1)
-	{
-	  cerr << _("Unexpected pattern argument following \"keep-all\"") << endl;
-	  return -1;
-	}
+        return _error->Error(_("Unexpected pattern argument following \"keep-all\""));
 
       for(pkgCache::PkgIterator i=(*apt_cache_file)->PkgBegin();
 	  !i.end(); ++i)
@@ -245,59 +242,59 @@ int cmdline_do_action(int argc, char *argv[],
       for(int i=1; i<argc; ++i)
 	{
 	  cmdline_pkgaction_type action = default_action;
-	  std::string target = argv[i];
-	  int tmp = strlen(argv[i]) - 1;
+	  std::string target = cmdl.FileList[i];
+	  int tmp = strlen(cmdl.FileList[i]) - 1;
 
 	  // HACK: disable interpreting of escapes if it's an existing
 	  //      package name.
-	  if((*apt_cache_file)->FindPkg(argv[i]).end())
-	    switch(argv[i][tmp])
+	  if((*apt_cache_file)->FindPkg(cmdl.FileList[i]).end())
+	    switch(cmdl.FileList[i][tmp])
 	      {
 	      case '-':
 		action = cmdline_remove;
-		target = std::string(argv[i], 0, tmp);
+		target = std::string(cmdl.FileList[i], 0, tmp);
 		break;
 	      case '=':
 		action = cmdline_hold;
-		target = std::string(argv[i], 0, tmp);
+		target = std::string(cmdl.FileList[i], 0, tmp);
 		break;
 	      case '+':
 		action = cmdline_install;
-		target = std::string(argv[i], 0, tmp);
+		target = std::string(cmdl.FileList[i], 0, tmp);
 		break;
 	      case '_':
 		action = cmdline_purge;
-		target = std::string(argv[i], 0, tmp);
+		target = std::string(cmdl.FileList[i], 0, tmp);
 
 		break;
 	      case ':':
 		action = cmdline_keep;
-		target = std::string(argv[i], 0, tmp);
+		target = std::string(cmdl.FileList[i], 0, tmp);
 		break;
 	      case 'D':
 		// "&BD" for installing build depends.
 		if(tmp >= 2 &&
-		   argv[i][tmp - 1] == 'B' &&
-		   argv[i][tmp - 2] == '&')
+		   cmdl.FileList[i][tmp - 1] == 'B' &&
+		   cmdl.FileList[i][tmp - 2] == '&')
 		  {
 		    action = cmdline_build_depends;
-		    target = std::string(argv[i], 0, strlen(argv[i]) - 3);
+		    target = std::string(cmdl.FileList[i], 0, strlen(cmdl.FileList[i]) - 3);
 		  }
 		break;
 	      case 'm':
 	      case 'M':
-		if(tmp > 0 && argv[i][tmp - 1] == '&')
+		if(tmp > 0 && cmdl.FileList[i][tmp - 1] == '&')
 		  {
-		    if(argv[i][tmp] == 'm')
+		    if(cmdl.FileList[i][tmp] == 'm')
 		      action = cmdline_unmarkauto;
 		    else
 		      action = cmdline_markauto;
-		    target = std::string(argv[i], 0, tmp - 1);
+		    target = std::string(cmdl.FileList[i], 0, tmp - 1);
 		  }
-		else if(tmp>0 && argv[i][tmp-1] == '+' && argv[i][tmp] == 'M')
+		else if(tmp>0 && cmdl.FileList[i][tmp-1] == '+' && cmdl.FileList[i][tmp] == 'M')
 		  {
 		    action = cmdline_installauto;
-		    target = std::string(argv[i], 0, tmp - 1);
+		    target = std::string(cmdl.FileList[i], 0, tmp - 1);
 		  }
 	      }
 
@@ -336,23 +333,36 @@ int cmdline_do_action(int argc, char *argv[],
 
   if(resolver_mode == resolver_mode_safe)
     {
+      const bool safe_resolver_show_actions =
+        aptcfg->FindB(PACKAGE "::Safe-Resolver::Show-Resolver-Actions", false);
+      const bool no_new_installs =
+        aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Installs", false);
+      const bool no_new_upgrades =
+        aptcfg->FindB(PACKAGE "::Safe-Resolver::No-New-Upgrades", false);
+
       if(!aptitude::cmdline::safe_resolve_deps(verbose,
                                                no_new_installs,
                                                no_new_upgrades,
                                                safe_resolver_show_actions,
                                                term))
-	{
-	  fprintf(stderr, _("Unable to safely resolve dependencies, try running with --full-resolver.\n"));
-	  return -1;
-	}
+        return _error->Error(_("Unable to safely resolve dependencies, try running with --full-resolver"));
     }
 
-  if(visual_preview)
+  if(aptcfg->FindB(PACKAGE "::CmdLine::Visual-Preview", false) == true)
     {
       ui_preview();
-      return 0;
+      return true;
     }
-  else if(simulate)
+
+  const bool showvers = aptcfg->FindB(PACKAGE "::CmdLine::Show-Versions", false);
+  const bool showdeps = aptcfg->FindB(PACKAGE "::CmdLine::Show-Deps", false);
+  const bool showsize = aptcfg->FindB(PACKAGE "::CmdLine::Show-Size-Changes", false);
+  const bool showwhy = aptcfg->FindB(PACKAGE "::CmdLine::Show-Why", false);
+  const bool always_prompt = aptcfg->FindB(PACKAGE "::CmdLine::Always-Prompt", false);
+  const bool assume_yes = aptcfg->FindB(PACKAGE "::CmdLine::Assume-Yes", false);
+  const bool fix_broken = aptcfg->FindB(PACKAGE "::CmdLine::Fix-Broken", false);
+
+  if(simulate)
     return cmdline_simulate(upgrade_mode != no_upgrade,
 			    to_install, to_hold, to_remove, to_purge,
 			    showvers, showdeps,
@@ -360,18 +370,15 @@ int cmdline_do_action(int argc, char *argv[],
 			    always_prompt, verbose, assume_yes,
 			    !fix_broken,
 			    policy, arch_only,
-                            term);
-  else if(queue_only)
+                            term) == 0;
+  else if(aptcfg->FindB("queue-only", false) == true)
     {
       aptitude::cmdline::apply_user_tags(user_tags);
 
       if(!(*apt_cache_file)->save_selection_list(*progress))
-	{
-	  _error->DumpErrors();
-	  return -1;
-	}
+        return false;
       else
-	return 0;
+	return true;
     }
   else
     {
@@ -383,23 +390,19 @@ int cmdline_do_action(int argc, char *argv[],
 			    policy, arch_only, term))
 	{
 	  printf(_("Abort.\n"));
-	  return 0;
+	  return true;
 	}
 
       aptitude::cmdline::apply_user_tags(user_tags);
 
-      download_install_manager m(download_only,
+      download_install_manager m(aptcfg->FindB(PACKAGE "::CmdLine::Download-Only", false),
 				 sigc::ptr_fun(&run_dpkg_directly));
 
-      int rval =
-	(cmdline_do_download(&m, verbose, term, term, term, term)
-         == download_manager::success ? 0 : -1);
+      if((cmdline_do_download(&m, verbose, term, term, term, term)
+          != download_manager::success)
+         || _error->PendingError())
+        return false;
 
-      if(_error->PendingError())
-	rval = -1;
-
-      _error->DumpErrors();
-
-      return rval;
+      return true;
     }
 }

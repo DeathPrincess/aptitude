@@ -36,6 +36,7 @@
 #include <solution_fragment.h> // For dep_targets()
 
 #include <generic/apt/apt.h>
+#include <generic/apt/config_signal.h>
 #include <generic/apt/matching/match.h>
 #include <generic/apt/matching/parse.h>
 #include <generic/apt/matching/pattern.h>
@@ -46,6 +47,7 @@
 // System includes:
 #include <apt-pkg/depcache.h>
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/pkgcache.h>
 #include <apt-pkg/pkgsystem.h>
 #include <apt-pkg/version.h>
@@ -1403,40 +1405,63 @@ cw::fragment *do_why(const std::vector<std::string> &leaves,
                 success);
 }
 
-int cmdline_why(int argc, char *argv[],
-		const char *status_fname, int verbosity,
-		aptitude::why::roots_string_mode display_mode,
-		bool is_why_not)
+bool cmdline_why(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
   const shared_ptr<terminal_io> term = create_terminal();
+
+  string show_why_summary_mode =
+    aptcfg->Find(PACKAGE "::CmdLine::Show-Summary", "no-summary");
+  aptitude::why::roots_string_mode display_mode;
+  if(show_why_summary_mode == "no-summary" || show_why_summary_mode == _("no-summary"))
+    display_mode = aptitude::why::no_summary;
+  else if(show_why_summary_mode == "first-package" ||
+          show_why_summary_mode == _("first-package"))
+    display_mode = aptitude::why::show_requiring_packages;
+  else if(show_why_summary_mode == "first-package-and-type" ||
+          show_why_summary_mode == _("first-package-and-type"))
+    display_mode = aptitude::why::show_requiring_packages_and_strength;
+  else if(show_why_summary_mode == "all-packages" ||
+          show_why_summary_mode == _("all-packages"))
+    display_mode = aptitude::why::show_chain;
+  else if(show_why_summary_mode == "all-packages-with-dep-versions" ||
+          show_why_summary_mode == _("all-packages-with-dep-versions"))
+    display_mode = aptitude::why::show_chain_with_versions;
+  else
+    {
+      // ForTranslators: "why" here is the aptitude command name and
+      // should not be translated.
+      _error->Error(_("Invalid \"why\" summary mode \"%s\": expected \"no-summary\", \"first-package\", \"first-package-and-type\", \"all-packages\", or \"all-packages-with-dep-versions\"."),
+		    show_why_summary_mode.c_str());
+      display_mode = aptitude::why::no_summary;
+    }
 
   _error->DumpErrors();
 
   if(argc < 2)
-    {
-      fprintf(stderr, _("%s: this command requires at least one argument (the package to query).\n"),
-	      argv[0]);
-      return -1;
-    }
+    return _error->Error(_("%s: this command requires at least one argument (the package to query)"),
+                         cmdl.FileList[0]);
 
   OpProgress progress;
 
   apt_init(&progress, true, status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   // Keep track of whether any argument couldn't be parsed, but
   // don't bail until we finish parsing, so we can display all
   // the errors we find.
   bool parsing_arguments_failed = false;
 
-  const char *pkgname = argv[argc - 1];
-  bool is_removal = is_why_not;
-  pkgCache::PkgIterator pkg = (*apt_cache_file)->FindPkg(argv[argc - 1]);
+  const char *pkgname = cmdl.FileList[argc - 1];
+  bool is_removal = strcasecmp(cmdl.FileList[0], "why-not") == 0;
+  pkgCache::PkgIterator pkg = (*apt_cache_file)->FindPkg(cmdl.FileList[argc - 1]);
   if(pkg.end())
     {
       _error->Error(_("No package named \"%s\" exists."), pkgname);
@@ -1445,7 +1470,7 @@ int cmdline_why(int argc, char *argv[],
 
   std::vector<std::string> arguments;
   for(int i = 1; i + 1 < argc; ++i)
-    arguments.push_back(argv[i]);
+    arguments.push_back(cmdl.FileList[i]);
   std::vector<cwidget::util::ref_ptr<pattern> > matchers;
   if(!interpret_why_args(arguments, matchers))
     parsing_arguments_failed = true;
@@ -1465,18 +1490,17 @@ int cmdline_why(int argc, char *argv[],
 
   _error->DumpErrors();
 
-  int rval;
-  if(parsing_arguments_failed)
-    rval = -1;
-  else
-    rval = do_why(matchers,
-                  pkg,
-                  display_mode,
-                  verbosity,
-                  is_removal,
-                  term);
+  const int verbosity = aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
 
-  return rval;
+  if(parsing_arguments_failed)
+    return false;
+  else
+    exit(do_why(matchers,
+                pkg,
+                display_mode,
+                verbosity,
+                is_removal,
+                term));
 }
 
 namespace aptitude

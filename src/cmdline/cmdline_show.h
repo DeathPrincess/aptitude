@@ -21,6 +21,7 @@
 #define CMDLINE_SHOW_H
 
 // System includes:
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/pkgcache.h>
 
 #include <boost/shared_ptr.hpp>
@@ -61,7 +62,7 @@ bool do_cmdline_show(std::string s, int verbose,
                      const boost::shared_ptr<aptitude::cmdline::terminal_metrics> &term_metrics);
 
 /** The "show" user command. */
-int cmdline_show(int argc, char *argv[], int verbose);
+bool cmdline_show(CommandLine &cmdl);
 
 std::ostream &operator<<(std::ostream &out, const cwidget::fragment_contents &contents);
 

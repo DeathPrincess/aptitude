@@ -5,10 +5,12 @@
 #ifndef CMDLINE_CLEAN_H
 #define CMDLINE_CLEAN_H
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_clean.h
  */
 
-int cmdline_clean(int argc, char *argv[], bool simulate);
-int cmdline_autoclean(int argc, char *argv[], bool simulate);
+bool cmdline_clean(CommandLine &cmdl);
+bool cmdline_autoclean(CommandLine &cmdl);
 
 #endif // CMDLINE_CLEAN_H

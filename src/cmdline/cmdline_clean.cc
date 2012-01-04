@@ -34,6 +34,7 @@
 #include <apt-pkg/acquire.h>
 #include <apt-pkg/clean.h>
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/strutl.h>
 
 #include <iostream>
@@ -49,27 +50,23 @@ using aptitude::cmdline::terminal_io;
 using aptitude::cmdline::terminal_locale;
 using boost::shared_ptr;
 
-int cmdline_clean(int argc, char *argv[], bool simulate)
+bool cmdline_clean(CommandLine &cmdl)
 {
   const shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
 
-  if(argc != 1)
-    {
-      fprintf(stderr, _("E: The clean command takes no arguments\n"));
-      return -1;
-    }  
+  if(cmdl.FileSize() != 1)
+    return _error->Error(_("The clean command takes no arguments"));
 
   shared_ptr<OpProgress> progress = make_text_progress(false, term, term, term);
 
   apt_init(progress.get(), false);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
+
+  const bool simulate = aptcfg->FindB(PACKAGE "::Simulate", false);
 
   // In case we aren't root.
   if(!simulate)
@@ -78,10 +75,7 @@ int cmdline_clean(int argc, char *argv[], bool simulate)
     apt_cache_file->ReleaseLock();
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   if(aptcfg)
     {
@@ -97,11 +91,10 @@ int cmdline_clean(int argc, char *argv[], bool simulate)
 	}
     }
 
-  int rval=_error->PendingError() ? -1 : 0;
+  if(_error->PendingError())
+    return false;
 
-  _error->DumpErrors();
-
-  return rval;
+  return true;
 }
 
 // Shamelessly stolen from apt-get:
@@ -133,27 +126,23 @@ public:
   long get_total_size() {return total_size;}
 };
 
-int cmdline_autoclean(int argc, char *argv[], bool simulate)
+bool cmdline_autoclean(CommandLine &cmdl)
 {
   const shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
 
-  if(argc != 1)
-    {
-      fprintf(stderr, _("E: The autoclean command takes no arguments\n"));
-      return -1;
-    }  
+  if(cmdl.FileSize() != 1)
+    return _error->Error(_("The autoclean command takes no arguments"));
 
   shared_ptr<OpProgress> progress = make_text_progress(false, term, term, term);
 
   apt_init(progress.get(), false);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
+
+  const bool simulate = aptcfg->FindB(PACKAGE "::Simulate", false);
 
   // In case we aren't root.
   if(!simulate)
@@ -162,18 +151,15 @@ int cmdline_autoclean(int argc, char *argv[], bool simulate)
     apt_cache_file->ReleaseLock();
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   LogCleaner cleaner(simulate);
-  int rval=0;
+  bool rval = true;
   if(!(cleaner.Go(aptcfg->FindDir("Dir::Cache::archives"), *apt_cache_file) &&
        cleaner.Go(aptcfg->FindDir("Dir::Cache::archives")+"partial/",
 		  *apt_cache_file)) ||
      _error->PendingError())
-    rval=-1;
+    rval = false;
 
   _error->DumpErrors();
 
@@ -184,6 +170,6 @@ int cmdline_autoclean(int argc, char *argv[], bool simulate)
     printf(_("Freed %sB of disk space\n"),
 	   SizeToStr(cleaner.get_total_size()).c_str());
 
-  return rval;
+  exit(rval);
 }
 

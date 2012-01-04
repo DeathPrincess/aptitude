@@ -20,10 +20,12 @@
 #ifndef CMDLINE_CHECK_RESOLVER
 #define CMDLINE_CHECK_RESOLVER
 
+#include <apt-pkg/cmndline.h>
+
 /** \file cmdline_check_resolver.h
  */
 
-int cmdline_check_resolver(int argc, char *argv[], const char *status_fname);
+bool cmdline_check_resolver(CommandLine &cmdl);
 
 #endif
 

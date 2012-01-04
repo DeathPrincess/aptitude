@@ -37,6 +37,7 @@
 #include <pkg_sortpolicy.h>
 
 #include <generic/apt/apt.h>
+#include <generic/apt/config_signal.h>
 #include <generic/apt/matching/match.h>
 #include <generic/apt/matching/parse.h>
 #include <generic/apt/matching/pattern.h>
@@ -162,26 +163,27 @@ namespace
 }
 
 // FIXME: apt-cache does lots of tricks to make this fast.  Should I?
-int cmdline_search(int argc, char *argv[], const char *status_fname,
-		   string display_format, string width, string sort,
-		   bool disable_columns, bool debug)
+bool cmdline_search(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
   shared_ptr<terminal_io> term = create_terminal();
 
   int real_width=-1;
 
   pkg_item::pkg_columnizer::setup_columns();
 
-  pkg_sortpolicy *s=parse_sortpolicy(sort);
+  pkg_sortpolicy *s =
+    parse_sortpolicy(aptcfg->Find(PACKAGE "::CmdLine::Package-Sorting", "name,version"));
 
   if(!s)
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   _error->DumpErrors();
 
+  const string width = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Width", "");
   const unsigned int screen_width = term->get_screen_width();
   if(!width.empty())
     {
@@ -190,14 +192,12 @@ int cmdline_search(int argc, char *argv[], const char *status_fname,
       real_width=tmp;
     }
 
+  const string display_format =
+    aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Format", "%c%a%M %p# - %d#");
   wstring wdisplay_format;
 
   if(!cw::util::transcode(display_format.c_str(), wdisplay_format))
-    {
-      _error->DumpErrors();
-      fprintf(stderr, _("iconv of %s failed.\n"), display_format.c_str());
-      return -1;
-    }
+    return _error->Error(_("iconv of \"%s\" failed"), display_format.c_str());
 
   boost::scoped_ptr<column_definition_list> columns;
   columns.reset(parse_columns(wdisplay_format,
@@ -205,44 +205,36 @@ int cmdline_search(int argc, char *argv[], const char *status_fname,
                               pkg_item::pkg_columnizer::defaults));
 
   if(columns.get() == NULL)
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   if(argc<=1)
-    {
-      fprintf(stderr, _("search: You must provide at least one search term\n"));
-      return -1;
-    }
+    return _error->Error(_("search: You must provide at least one search term"));
 
   shared_ptr<OpProgress> progress =
     make_text_progress(true, term, term, term);
 
   apt_init(progress.get(), true, status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   vector<ref_ptr<pattern> > matchers;
 
   for(int i=1; i<argc; ++i)
     {
-      const char * const arg = argv[i];
+      const char * const arg = cmdl.FileList[i];
 
       ref_ptr<pattern> m = parse(arg);
       if(!m.valid())
-        {
-          _error->DumpErrors();
-
-          return -1;
-        }
+        return false;
 
       matchers.push_back(m);
     }
+
+  const bool disable_columns = aptcfg->FindB(PACKAGE "::CmdLine::Disable-Columns", false);
+  const bool debug = aptcfg->FindB(PACKAGE "::CmdLine::Debug-Search", false);
 
   return do_search_packages(matchers,
                             s,
@@ -253,5 +245,5 @@ int cmdline_search(int argc, char *argv[], const char *status_fname,
                             debug,
                             term,
                             term,
-                            term);
+                            term) == 0;
 }

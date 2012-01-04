@@ -21,31 +21,35 @@
 
 #include "cmdline_dump_resolver.h"
 
+#include <generic/apt/config_signal.h>
 #include <generic/apt/aptitude_resolver_universe.h>
 #include <generic/problemresolver/dump_universe.h>
 
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 
 using namespace std;
 
-int cmdline_dump_resolver(int argc, char *argv[],
-			  const char *status_fname)
+bool cmdline_dump_resolver(CommandLine &cmdl)
 {
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
+
   _error->DumpErrors();
 
   OpProgress progress;
 
   apt_init(&progress, true, status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   aptitude_universe u(*apt_cache_file);
 
   dump_universe(u, cout);
 
-  return 0;
+  return true;
 }

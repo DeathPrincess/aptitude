@@ -2,15 +2,24 @@
 //
 //   Copyright 2004 Daniel Burrows
 
+
+// Local includes:
 #include "cmdline_moo.h"
 
 #include <aptitude.h>
 
+#include <generic/apt/apt.h>
+#include <generic/apt/config_signal.h>
+
+
+// System includes:
+#include <apt-pkg/cmndline.h>
+
 #include <stdio.h>
 
-int cmdline_moo(int argc, char *argv[], int verbose)
+bool cmdline_moo(CommandLine &cmdl)
 {
-  switch(verbose)
+  switch(aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0))
     {
     case 0:
       printf(_("There are no Easter Eggs in this program.\n"));
@@ -43,5 +52,5 @@ int cmdline_moo(int argc, char *argv[], int verbose)
       break;
     }
 
-  return 0;
+  return true;
 }

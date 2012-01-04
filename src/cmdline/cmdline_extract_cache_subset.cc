@@ -36,6 +36,7 @@
 
 // System includes:
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 #include <apt-pkg/progress.h>
 
 #include <stdio.h>
@@ -49,26 +50,24 @@ namespace aptitude
 {
   namespace cmdline
   {
-    int extract_cache_subset(int argc, char *argv[])
+    bool extract_cache_subset(CommandLine &cmdl)
     {
+      const int argc = cmdl.FileSize();
+
       if(argc < 2)
-	{
-	  fprintf(stderr, _("extract-cache-entries: at least one argument is required (the directory\nto which to write files).\n"));
-	  return -1;
-	}
+        return _error->Error
+          (_("extract-cache-entries: at least one argument is required (the directory\n"
+             "to which to write files)."));
 
       const shared_ptr<terminal_io> term = create_terminal();
 
-      std::string out_dir = argv[1];
+      std::string out_dir = cmdl.FileList[1];
 
       boost::shared_ptr<OpProgress> progress = make_text_progress(false, term, term, term);
 
       apt_init(progress.get(), true);
       if(_error->PendingError())
-	{
-	  _error->DumpErrors();
-	  return -1;
-	}
+        return false;
 
       bool ok = true;
       std::set<pkgCache::PkgIterator> packages;
@@ -82,7 +81,7 @@ namespace aptitude
 	{
 	  for(int i = 2; i < argc; ++i)
 	    {
-	      std::string arg(argv[i]);
+	      std::string arg(cmdl.FileList[i]);
 
 	      if(!aptitude::matching::is_pattern(arg))
 		{
@@ -125,21 +124,20 @@ namespace aptitude
 	}
 
       if(!ok)
-	return 2;
+	exit(2);
 
       if(packages.size() == 0)
 	{
 	  printf(_("No packages were selected by the given search pattern; nothing to do.\n"));
-	  return 0;
+	  return true;
 	}
 
       aptitude::apt::make_truncated_state_copy(out_dir, packages);
 
-      bool copy_ok = !_error->PendingError();
+      if(_error->PendingError())
+        exit(1);
 
-      _error->DumpErrors();
-
-      return copy_ok ? 0 : 1;
+      return true;
     }
   }
 }

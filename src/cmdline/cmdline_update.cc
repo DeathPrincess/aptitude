@@ -18,6 +18,8 @@
 //   Boston, MA 02111-1307, USA.
 
 // Local includes:
+#include "cmdline_update.h"
+
 #include "cmdline_util.h"
 
 #include "terminal.h"
@@ -31,6 +33,7 @@
 
 // System includes:
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 
 #include <stdio.h>
 
@@ -44,17 +47,12 @@ void print_autoclean_msg()
   printf(_("Deleting obsolete downloaded files\n"));
 }
 
-int cmdline_update(int argc, char *argv[], int verbose)
+bool cmdline_update(CommandLine &cmdl)
 {
   shared_ptr<terminal_io> term = create_terminal();
 
-  _error->DumpErrors();
-
-  if(argc!=1)
-    {
-      fprintf(stderr, _("E: The update command takes no arguments\n"));
-      return -1;
-    }
+  if(cmdl.FileSize() != 1)
+    return _error->Error(_("The update command takes no arguments"));
 
   // Don't exit if there's an error: it probably means that there
   // was a problem loading the package lists, so go ahead and try to
@@ -63,15 +61,12 @@ int cmdline_update(int argc, char *argv[], int verbose)
 
   download_update_manager m;
   m.pre_autoclean_hook.connect(sigc::ptr_fun(print_autoclean_msg));
-  int rval =
-    (cmdline_do_download(&m, verbose, term, term, term, term)
-     == download_manager::success ? 0 : -1);
+  const int verbose = aptcfg->FindI(PACKAGE "::CmdLine::Verbose", 0);
+  if((cmdline_do_download(&m, verbose, term, term, term, term)
+      != download_manager::success)
+     || _error->PendingError())
+    return false;
 
-  if(_error->PendingError())
-    rval = -1;
-
-  _error->DumpErrors();
-
-  return rval;
+  return true;
 }
 

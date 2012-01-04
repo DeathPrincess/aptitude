@@ -32,6 +32,7 @@
 
 // System includes:
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 
 #include <stdio.h>
 
@@ -42,30 +43,30 @@ using aptitude::cmdline::make_text_progress;
 using aptitude::cmdline::terminal_io;
 using boost::shared_ptr;
 
-int cmdline_forget_new(int argc, char *argv[],
-		       const char *status_fname, bool simulate)
+bool cmdline_forget_new(CommandLine &cmdl)
 {
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
   const shared_ptr<terminal_io> term = create_terminal();
 
   _error->DumpErrors();
 
   // NB: perhaps we should allow forgetting the new state of just
   // a few packages?
-  if(argc != 1)
-    {
-      fprintf(stderr, _("E: The forget-new command takes no arguments\n"));
-      return -1;
-    }  
+  if(cmdl.FileSize() != 1)
+    return _error->Error(_("The forget-new command takes no arguments"));
 
   shared_ptr<OpProgress> progress = make_text_progress(false, term, term, term);
 
   apt_init(progress.get(), false, status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
+
+  const bool simulate = aptcfg->FindB(PACKAGE "::Simulate", false);
 
   // In case we aren't root.
   if(!simulate)
@@ -74,10 +75,7 @@ int cmdline_forget_new(int argc, char *argv[],
     apt_cache_file->ReleaseLock();
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   if(simulate)
     printf(_("Would forget what packages are new\n"));
@@ -88,13 +86,9 @@ int cmdline_forget_new(int argc, char *argv[],
       (*apt_cache_file)->save_selection_list(*progress);
 
       if(_error->PendingError())
-	{
-	  _error->DumpErrors();
-
-	  return -1;
-	}
+        return false;
     }
 
-  return 0;
+  return true;
 }
 

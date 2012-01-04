@@ -30,6 +30,7 @@
 #include <pkg_ver_item.h>
 #include <load_sortpolicy.h>
 
+#include <generic/apt/config_signal.h>
 #include <generic/apt/matching/parse.h>
 #include <generic/apt/matching/pattern.h>
 #include <generic/apt/matching/serialize.h>
@@ -40,6 +41,7 @@
 
 // System includes:
 #include <apt-pkg/error.h>
+#include <apt-pkg/cmndline.h>
 
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
@@ -521,28 +523,59 @@ group_by_option parse_group_by_option(const std::string &option)
                                  % option).str());
 }
 
-int cmdline_versions(int argc, char *argv[], const char *status_fname,
-                     std::string display_format, std::string width,
-                     std::string sort, bool disable_columns, bool debug,
-                     group_by_option group_by,
-                     show_package_names_option show_package_names)
+bool cmdline_versions(CommandLine &cmdl)
 {
+  const int argc = cmdl.FileSize();
+  char *status_fname=NULL;
+  if(aptcfg->Find("status-fname", "").empty() == false)
+    status_fname = strdup(aptcfg->Find("status-fname").c_str());
   shared_ptr<terminal_io> term = create_terminal();
+
+  group_by_option group_by;
+  try
+    {
+      group_by =
+        parse_group_by_option(aptcfg->Find(PACKAGE "::CmdLine::Versions-Group-By", "auto"));
+    }
+  catch(std::exception &ex)
+    {
+      _error->Error("%s", ex.what());
+      group_by = group_by_auto;
+    }
+
+  const string show_package_names_mode_string =
+    aptcfg->Find(PACKAGE "::CmdLine::Versions-Show-Package-Names", "auto");
+  show_package_names_option show_package_names;
+  if(show_package_names_mode_string == "never" ||
+     show_package_names_mode_string == P_("--show-package-names|never"))
+    show_package_names = show_package_names_never;
+  else if(show_package_names_mode_string == "auto" ||
+          show_package_names_mode_string == P_("--show-package-names|auto"))
+    show_package_names = show_package_names_auto;
+  else if(show_package_names_mode_string == "always" ||
+          show_package_names_mode_string == P_("--show-package-names|always"))
+    show_package_names = show_package_names_always;
+  else
+    {
+      _error->Error("%s",
+                    (boost::format(_("Invalid package names display mode \"%s\" (should be \"never\", \"auto\", or \"always\")."))
+                     % show_package_names_mode_string).str().c_str());
+      show_package_names = show_package_names_auto;
+    }
 
   int real_width=-1;
 
   pkg_item::pkg_columnizer::setup_columns();
 
-  pkg_sortpolicy *sort_policy = parse_sortpolicy(sort);
+  pkg_sortpolicy *sort_policy =
+    parse_sortpolicy(aptcfg->Find(PACKAGE "::CmdLine::Package-Sorting", "name,version"));
 
   if(!sort_policy)
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   _error->DumpErrors();
 
+  const string width = aptcfg->Find(PACKAGE "::CmdLine::Package-Display-Width", "");
   const unsigned int screen_width = term->get_screen_width();
   if(!width.empty())
     {
@@ -551,14 +584,12 @@ int cmdline_versions(int argc, char *argv[], const char *status_fname,
       real_width = tmp;
     }
 
+  const string display_format =
+    aptcfg->Find(PACKAGE "::CmdLine::Version-Display-Format", "%c%a%M %p# %t %i");
   std::wstring wdisplay_format;
 
   if(!cw::util::transcode(display_format.c_str(), wdisplay_format))
-    {
-      _error->DumpErrors();
-      fprintf(stderr, _("iconv of %s failed.\n"), display_format.c_str());
-      return -1;
-    }
+    return _error->Error(_("iconv of \"%s\" failed"), display_format.c_str());
 
   boost::scoped_ptr<cw::config::column_definition_list> columns;
   columns.reset(parse_columns(wdisplay_format,
@@ -566,32 +597,25 @@ int cmdline_versions(int argc, char *argv[], const char *status_fname,
                               pkg_item::pkg_columnizer::defaults));
 
   if(columns.get() == NULL)
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
-  if(argc <= 1)
-    {
-      fprintf(stderr, _("versions: You must provide at least one package selector\n"));
-      return -1;
-    }
+  if(cmdl.FileSize() <= 1)
+    return _error->Error(_("versions: You must provide at least one package selector"));
 
   OpProgress progress;
 
   apt_init(&progress, true, status_fname);
+  if(status_fname)
+    free(status_fname);
 
   if(_error->PendingError())
-    {
-      _error->DumpErrors();
-      return -1;
-    }
+    return false;
 
   std::vector<cw::util::ref_ptr<m::pattern> > matchers;
 
   for(int i = 1; i < argc; ++i)
     {
-      const char * const arg = argv[i];
+      const char * const arg = cmdl.FileList[i];
       const bool treat_as_exact_name =
         !aptitude::matching::is_pattern(arg);
 
@@ -601,17 +625,16 @@ int cmdline_versions(int argc, char *argv[], const char *status_fname,
         {
           cw::util::ref_ptr<m::pattern> m = m::parse(arg);
           if(!m.valid())
-            {
-              _error->DumpErrors();
-
-              return -1;
-            }
+            return false;
 
           matchers.push_back(m);
         }
     }
 
-  return do_search_versions(matchers,
+  const bool disable_columns = aptcfg->FindB(PACKAGE "::CmdLine::Disable-Columns", false);
+  const bool debug = aptcfg->FindB(PACKAGE "::CmdLine::Debug-Search", false);
+
+  exit(do_search_versions(matchers,
                             sort_policy,
                             *columns,
                             real_width,
@@ -622,5 +645,5 @@ int cmdline_versions(int argc, char *argv[], const char *status_fname,
                             debug,
                             term,
                             term,
-                            term);
+                            term));
 }

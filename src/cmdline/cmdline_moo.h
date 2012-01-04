@@ -6,11 +6,13 @@
 #ifndef CMDLINE_MOO
 #define CMDLINE_MOO
 
+#include <apt-pkg/cmndline.h>
+
 /** \brief The most important command-line action.
  * 
  *  \file cmdline_moo.h
  */
 
-int cmdline_moo(int argc, char *argv[], int verbose);
+bool cmdline_moo(CommandLine &cmdl);
 
 #endif // CMDLINE_MOO
